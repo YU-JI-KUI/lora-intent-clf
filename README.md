@@ -462,6 +462,22 @@ uv run python src/inference.py --input "我想买一份寿险"
 
 ---
 
+## 发布到 GitHub
+
+项目已初始化 Git 仓库并完成首次提交。使用以下命令创建公开 GitHub 仓库：
+
+```bash
+# 方式一：一键脚本（推荐）
+bash scripts/setup_github.sh lora-intent-clf
+
+# 方式二：手动执行
+gh repo create lora-intent-clf --public --source=. --push
+```
+
+前提条件：已安装 [GitHub CLI](https://cli.github.com/) 并完成 `gh auth login`。
+
+---
+
 ## FAQ
 
 **Q: V100 能否使用 BF16？**
