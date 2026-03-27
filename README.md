@@ -24,7 +24,7 @@
 ```
 /workspace/lora-intent-clf/
 ├── README.md                          # 本文档
-├── pyproject.toml                     # uv 项目配置 & Python 依赖
+├── pyproject.toml                     # ruff 代码检查配置
 ├── .python-version                    # Python 版本锁定（3.10）
 ├── .gitignore
 │
@@ -89,12 +89,15 @@ llamafactory-cli version
 # 检查 GPU
 nvidia-smi
 
-# 检查 uv（Python 脚本方案需要）
-uv --version
-
 # 检查 TensorBoard（2.9.0）
 tensorboard --version
+
+# 安装 Python 依赖（使用 pip，不依赖 uv）
+pip install -r requirements.txt
 ```
+
+> **关于依赖管理**：本项目使用 `requirements.txt` 管理依赖，无需 uv。
+> 服务器已预装的版本见 `requirements.txt` 注释，直接 `pip install -r requirements.txt` 即可。
 
 ### 1. 准备数据
 
@@ -336,7 +339,7 @@ eval_dataset: intent_clf_val                     # ← 验证集（也是 datase
 |--------|---------------------------|----------|----------|
 | train.json | `intent_clf_train` | 训练阶段 | YAML: `dataset: intent_clf_train` |
 | val.json | `intent_clf_val` | 训练过程中的评估 | YAML: `eval_dataset: intent_clf_val` |
-| test.json | `intent_clf_test` | 训练完成后的最终测试 | Python: `uv run python src/evaluate.py` 或 `llamafactory-cli chat` 手动测试 |
+| test.json | `intent_clf_test` | 训练完成后的最终测试 | Python: `python src/evaluate.py` 或 `llamafactory-cli chat` 手动测试 |
 
 说明：
 - **训练集**通过 `dataset` 参数指定，LlamaFactory 用它来更新模型权重
@@ -352,7 +355,7 @@ eval_dataset: intent_clf_val                     # ← 验证集（也是 datase
 | 特性 | 方案 A：LlamaFactory CLI | 方案 B：Python 脚本 |
 |------|--------------------------|---------------------|
 | 配置方式 | YAML 文件 | Python dataclass + JSON |
-| 启动方式 | `llamafactory-cli train` | `uv run python src/train.py` |
+| 启动方式 | `llamafactory-cli train` | `python src/train.py` |
 | 依赖 | LlamaFactory v0.9.4.dev0 | transformers + peft |
 | 适用场景 | 快速实验、参数调优 | 需要定制化训练流程 |
 | 多 GPU | 自动支持 | 需配合 accelerate/torchrun |
@@ -417,8 +420,11 @@ bash /workspace/lora-intent-clf/scripts/run_train_and_export.sh --skip-export   
 
 ```bash
 cd /workspace/lora-intent-clf
-# 使用 uv 安装依赖（Python 3.10）
-uv sync
+# 安装生产依赖
+pip install -r requirements.txt
+
+# 安装开发依赖（含 ruff + pytest）
+pip install -r requirements-dev.txt
 ```
 
 ### B1. 训练
@@ -427,13 +433,13 @@ uv sync
 cd /workspace/lora-intent-clf
 
 # 使用默认配置训练
-uv run python src/train.py
+python src/train.py
 
 # 使用自定义配置文件
-uv run python src/train.py --config my_config.json
+python src/train.py --config my_config.json
 
 # 命令行覆盖参数
-uv run python src/train.py \
+python src/train.py \
     --model_name_or_path /workspace/Qwen3-8B \
     --lora_rank 32 \
     --learning_rate 2e-4 \
@@ -481,10 +487,10 @@ tensorboard --logdir /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft/logs --p
 cd /workspace/lora-intent-clf
 
 # 使用默认配置导出
-uv run python src/export_model.py
+python src/export_model.py
 
 # 指定适配器路径和导出目录
-uv run python src/export_model.py \
+python src/export_model.py \
     --adapter_path /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft \
     --export_dir /workspace/lora-intent-clf/models/qwen3-8b-intent-clf
 ```
@@ -495,38 +501,52 @@ uv run python src/export_model.py \
 cd /workspace/lora-intent-clf
 
 # 交互式推理（使用合并模型）
-uv run python src/inference.py
+python src/inference.py
 
 # 单条推理
-uv run python src/inference.py --input "我想买寿险"
+python src/inference.py --input "我想买寿险"
 
 # 批量推理
-uv run python src/inference.py \
+python src/inference.py \
     --input_file /workspace/lora-intent-clf/data/test.json \
     --output_file /workspace/lora-intent-clf/results/predictions.json
 
 # 使用 LoRA 适配器推理（无需先导出）
-uv run python src/inference.py \
+python src/inference.py \
     --adapter_path /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft \
     --input "我想买寿险"
 ```
 
-### B5. 评估
+### B5. 批量评估
+
+LlamaFactory CLI 的内置 `eval` 指标只有 loss/perplexity，**不适合分类任务**。推荐以下两种方式：
+
+**方式一（推荐）：LlamaFactory 批量预测 + Python 解析**
 
 ```bash
-cd /workspace/lora-intent-clf
+# Step 1：LlamaFactory 在测试集上批量推理，生成预测文件
+llamafactory-cli train /workspace/lora-intent-clf/configs/predict_lora.yaml
 
-# 在测试集上评估
-uv run python src/evaluate.py
+# Step 2：Python 解析预测文件，输出 accuracy / F1 / 分类报告
+python src/evaluate.py \
+    --pred_file /workspace/lora-intent-clf/saves/qwen3-8b/lora/predict/generated_predictions.jsonl \
+    --output_file /workspace/lora-intent-clf/saves/qwen3-8b/lora/predict/eval_report.json
 
-# 指定测试集和输出文件
-uv run python src/evaluate.py \
+# 一键脚本（两步合一）
+bash scripts/run_evaluate.sh
+```
+
+**方式二：Python 脚本直接推理评估**（无 LlamaFactory 时使用）
+
+```bash
+# 使用 LoRA 适配器直接推理
+python src/evaluate.py \
+    --adapter_path /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft \
     --test_file /workspace/lora-intent-clf/data/test.json \
     --output_file /workspace/lora-intent-clf/results/eval_report.json
 
-# 使用 LoRA 适配器评估
-uv run python src/evaluate.py \
-    --adapter_path /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft
+# 或一键脚本
+bash scripts/run_evaluate.sh --python
 ```
 
 评估输出示例：
@@ -555,10 +575,10 @@ Python 脚本方案使用多 GPU 时，需配合 `torchrun` 或 `accelerate`：
 cd /workspace/lora-intent-clf
 
 # 方式一：torchrun（推荐）
-uv run torchrun --nproc_per_node=4 src/train.py
+torchrun --nproc_per_node=4 src/train.py
 
 # 方式二：accelerate
-uv run accelerate launch --num_processes=4 src/train.py
+accelerate launch --num_processes=4 src/train.py
 ```
 
 ---
@@ -573,7 +593,7 @@ uv run accelerate launch --num_processes=4 src/train.py
 cd /workspace/lora-intent-clf
 
 # 生成默认配置模板
-uv run python -c "
+python -c "
 from src.config import ProjectConfig
 cfg = ProjectConfig()
 cfg.save('my_config.json')
@@ -581,7 +601,7 @@ print('配置已保存到 my_config.json')
 "
 
 # 编辑 my_config.json 后使用
-uv run python src/train.py --config my_config.json
+python src/train.py --config my_config.json
 ```
 
 ### 更换基座模型
@@ -598,7 +618,7 @@ template: llama3                                           # 替换模板
 **Python 方案**：通过命令行参数
 
 ```bash
-uv run python src/train.py \
+python src/train.py \
     --model_name_or_path meta-llama/Meta-Llama-3-8B-Instruct \
     --template llama3
 ```
@@ -636,6 +656,112 @@ labels: List[str] = field(
 ```
 
 YAML 方案无需修改配置文件，因为标签信息完全在 instruction 中定义。
+
+---
+
+## 大数据量场景的 LoRA 最佳实践（~6万条，二分类）
+
+### 推荐参数配置
+
+| 参数 | 当前值 | 推荐值 | 说明 |
+|------|--------|--------|------|
+| `num_train_epochs` | 5 | **2~3** | 6万条数据每轮已有充足样本，5轮易过拟合 |
+| `lora_rank` | 16 | **16** | 二分类任务 rank=16 足够，无需更高 |
+| `lora_alpha` | 32 | **32** | 保持 alpha=2×rank 的经验比例 |
+| `lora_target` | all | **all** | 全参数目标对分类效果最优 |
+| `learning_rate` | 2e-4 | **2e-4** | 当前值合理，可以试 5e-4（配合短 warmup） |
+| `per_device_train_batch_size` | 2 | **2** | V100 16GB FP16 的显存极限，不建议增大 |
+| `gradient_accumulation_steps` | 4 | **4~8** | 有效 batch = 2×4×4=32，8 则为 64 |
+| `warmup_ratio` | 0.05 | **0.05** | 约 360 步 warmup，合理 |
+| `lr_scheduler_type` | cosine | **cosine** | 长训练首选，自然衰减 |
+| `cutoff_len` | 512 | **256~512** | 意图识别句子短，256 足够且速度更快 |
+| `eval_steps` | 500 | **1000~2000** | 每次 eval 耗时 612s，减少频率节省时间 |
+
+### 关键建议
+
+**epochs 选择原则**：数据量越大，所需 epochs 越少。6万条数据的经验：
+- 1 epoch = 快速验证，看 loss 是否收敛方向正确
+- 2 epochs = 多数情况已足够（每类3万条，模型见过足够多样本）
+- 3 epochs = 保守选择，适合类别不均衡时
+- 5 epochs（当前）= 数据量少（<1万条）时才需要，6万条大概率过拟合
+
+**eval_steps 建议**：当前每次验证耗时 612s（≈10min），eval_steps=500 意味着每 500 步停下来验证 10min，5 轮训练共验证 14 次 = 额外 143min。将 eval_steps 改为 2000，仅额外花费 36min，节省近 2 小时。
+
+**cutoff_len 建议**：意图识别的输入文本通常在 50 字以内，instruction 加上 input 合计不超过 200 token。将 cutoff_len 从 512 改为 256，显存占用降低约 30%，速度可能提升 20%。
+
+---
+
+## Step 数量计算公式
+
+理解 step 数量的计算逻辑，才能准确预估训练时间。
+
+### 公式
+
+```
+有效 batch 大小  = per_device_train_batch_size × GPU 数量 × gradient_accumulation_steps
+每轮步数        = ceil(训练集样本数 ÷ 有效 batch 大小)
+总步数          = 每轮步数 × num_train_epochs
+```
+
+### 当前配置计算
+
+```
+训练集样本数    = 60,000 × 80% = 48,000 条
+per_device_batch = 2
+GPU 数量        = 4
+gradient_accum  = 4
+有效 batch      = 2 × 4 × 4 = 32
+
+每轮步数        = ceil(48,000 ÷ 32) = 1,500
+总步数          = 1,500 × 5 = 7,500（实际 7,195，误差来自数据集整除尾部丢弃）
+```
+
+### 参数变化对步数的影响
+
+| 改变的参数 | 变化方向 | 对步数的影响 |
+|-----------|---------|------------|
+| `num_train_epochs` | ×N | 步数 ×N（线性） |
+| `gradient_accumulation_steps` | ×2 | 步数 ÷2（减半） |
+| `per_device_train_batch_size` | ×2 | 步数 ÷2（减半，但受显存限制） |
+| `cutoff_len` | 减小 | 步数不变，但每步变快（显存降低） |
+| `lora_rank` | 增大 | 步数不变，但每步变慢（参数增多） |
+
+---
+
+## 训练时间估算
+
+基准测量（4×V100 16GB，DeepSpeed ZeRO-3，当前配置）：
+- 训练单步耗时：**13.2 s/step**
+- 验证单次耗时：**612 s/次**（6,000条验证集，batch=4）
+
+### 不同 epochs 配置的耗时对比
+
+| 场景 | epochs | 总步数 | 纯训练时间 | eval次数<br>(eval_steps=500) | eval总耗时 | **总耗时** |
+|------|--------|--------|-----------|---------------------------|-----------|----------|
+| 快速验证 | 1 | 1,500 | 5.5 h | 3 次 | 0.5 h | **6.0 h** |
+| **推荐** | **2** | **3,000** | **11.0 h** | **6 次** | **1.0 h** | **12.0 h** |
+| 保守 | 3 | 4,500 | 16.5 h | 9 次 | 1.5 h | **18.0 h** |
+| 当前配置 | 5 | 7,500 | 27.5 h | 14 次 | 2.4 h | **29.9 h** |
+
+### eval_steps 对总时间的影响（以 5 epochs / 7,500 步为例）
+
+| eval_steps | eval次数 | eval总耗时 | 节省时间 |
+|-----------|---------|-----------|---------|
+| 200 | 37 次 | 6.3 h | — |
+| **500（当前）** | **14 次** | **2.4 h** | — |
+| 1000 | 7 次 | 1.2 h | **节省 1.2 h** |
+| 2000 | 3 次 | 0.5 h | **节省 1.9 h** |
+| epoch 末（eval_strategy: epoch） | 5 次 | 0.9 h | **节省 1.5 h** |
+
+> **立竿见影的优化**：当前训练完成后，下次训练只需把 `eval_steps: 500` 改为 `eval_steps: 2000`（或 `eval_strategy: epoch`），在不影响任何模型效果的情况下，直接节省约 2 小时。
+
+### cutoff_len 对速度的影响（估算）
+
+| cutoff_len | 每步耗时(估算) | 相对当前 |
+|-----------|------------|---------|
+| 128 | ~8 s/step | 快 ~40% |
+| 256 | ~10 s/step | 快 ~25% |
+| **512（当前）** | **13.2 s/step** | 基准 |
 
 ---
 
@@ -701,18 +827,18 @@ llamafactory-cli chat /workspace/lora-intent-clf/configs/inference.yaml
 ```bash
 cd /workspace/lora-intent-clf
 # 1. 安装依赖
-uv sync
+pip install -r requirements.txt
 # 2. 准备数据（替换 data/*.json）
 # 3. 训练
-uv run python src/train.py
+python src/train.py
 # 4. TensorBoard
 tensorboard --logdir /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft/logs --port 6006
 # 5. 导出
-uv run python src/export_model.py
+python src/export_model.py
 # 6. 评估
-uv run python src/evaluate.py --test_file /workspace/lora-intent-clf/data/test.json --output_file /workspace/lora-intent-clf/results/eval.json
+python src/evaluate.py --test_file /workspace/lora-intent-clf/data/test.json --output_file /workspace/lora-intent-clf/results/eval.json
 # 7. 推理
-uv run python src/inference.py --input "我想买一份寿险"
+python src/inference.py --input "我想买一份寿险"
 ```
 
 ---
@@ -721,7 +847,7 @@ uv run python src/inference.py --input "我想买一份寿险"
 
 **方案 A（LlamaFactory CLI）**：YAML 配置中所有路径均为绝对路径（`/workspace/lora-intent-clf/...`），因此可以在**任意目录**下执行 `llamafactory-cli train`，不受执行目录影响。
 
-**方案 B（Python 脚本）**：Python 的 `config.py` 中所有默认路径也是绝对路径，因此同样不受执行目录影响。但是 `uv run` 需要在 `pyproject.toml` 所在目录执行，所以建议先 `cd /workspace/lora-intent-clf`。
+**方案 B（Python 脚本）**：Python 的 `config.py` 中所有默认路径也是绝对路径，因此同样不受执行目录影响。建议先 `cd /workspace/lora-intent-clf` 再执行，确保相对 import 正常工作。
 
 ---
 

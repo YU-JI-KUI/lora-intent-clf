@@ -1,0 +1,18 @@
+# LoRA 意图识别微调项目 — 生产依赖
+# 基于服务器实际安装版本锁定，Python 3.10.6
+# 安装命令：pip install -r requirements.txt
+
+torch==2.6.0
+transformers==4.56.1
+peft==0.17.1
+datasets==4.0.0
+accelerate==1.10.1
+sentencepiece==0.2.1
+
+# protobuf 4.25.x 与 TensorBoard 2.9.0 存在 API 不兼容问题：
+#   TypeError: Descriptors cannot be created directly.
+# 已在 run_train_and_export.sh 中设置
+#   export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+# 作为运行时绕过方案，如有条件可降级到 protobuf<3.20.0
+protobuf==4.25.8
+tensorboard==2.9.0

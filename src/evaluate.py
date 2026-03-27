@@ -3,11 +3,19 @@
 
 说明：
   计算准确率、精确率、召回率、F1-score，并生成分类报告。
+  支持两种输入模式：
+    1. LlamaFactory 预测文件（generated_predictions.jsonl）— 无需加载模型，速度快
+    2. 直接加载模型推理（兼容原有 Python 方案）
 
 用法：
-  uv run python src/evaluate.py                                      # 使用默认配置
-  uv run python src/evaluate.py --test_file data/test.json           # 指定测试集
-  uv run python src/evaluate.py --adapter_path saves/qwen3-8b/...   # 使用 LoRA 适配器
+  # 模式1：解析 LlamaFactory 批量预测结果（推荐，训练完后第一时间评估）
+  python src/evaluate.py --pred_file saves/qwen3-8b/lora/predict/generated_predictions.jsonl
+
+  # 模式2：直接用合并模型推理
+  python src/evaluate.py --model_path models/qwen3-8b-intent-clf
+
+  # 模式3：直接用 LoRA 适配器推理
+  python src/evaluate.py --adapter_path saves/qwen3-8b/lora/sft
 """
 
 from __future__ import annotations
@@ -230,20 +238,106 @@ def evaluate(
     return metrics
 
 
+def evaluate_from_pred_file(
+    pred_file: str,
+    labels: Optional[list[str]] = None,
+    output_file: Optional[str] = None,
+) -> dict:
+    """
+    模式1：解析 LlamaFactory generated_predictions.jsonl，直接计算分类指标
+    无需加载模型，适合训练完成后快速评估。
+
+    LlamaFactory 输出格式（每行一个 JSON）：
+      {"predict": "寿险意图", "label": "寿险意图"}
+
+    Args:
+        pred_file: LlamaFactory 生成的 generated_predictions.jsonl 路径
+        labels: 标签列表（None 则自动从数据中推断）
+        output_file: 评估结果保存路径（可选）
+
+    Returns:
+        评估指标字典
+    """
+    y_true, y_pred = [], []
+
+    with open(pred_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            item = json.loads(line)
+            # LlamaFactory 生成的字段名
+            label = item.get("label", "").strip()
+            predict = item.get("predict", "").strip()
+            y_true.append(label)
+            y_pred.append(predict)
+
+    if not y_true:
+        raise ValueError(f"预测文件为空或格式不正确: {pred_file}")
+
+    # 自动推断标签（如未指定）
+    if labels is None:
+        labels = sorted(set(y_true))
+        logger.info(f"自动推断标签: {labels}")
+
+    # 统计无法识别的预测（输出不在标签范围内）
+    unknown_preds = [p for p in y_pred if p not in labels]
+    if unknown_preds:
+        counter = Counter(unknown_preds)
+        logger.warning(f"存在 {len(unknown_preds)} 条预测输出不在标签范围内: {dict(counter)}")
+        logger.warning("这些预测将被当作错误计入指标，请检查 max_new_tokens 和 instruction 是否正确")
+
+    metrics = compute_metrics(y_true, y_pred, labels)
+    print_classification_report(metrics, labels)
+
+    if output_file:
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        details = [
+            {"label": t, "predict": p, "correct": t == p}
+            for t, p in zip(y_true, y_pred)
+        ]
+        result = {"metrics": metrics, "details": details}
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        logger.info(f"评估结果已保存到: {output_file}")
+
+    return metrics
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="意图分类模型评估脚本")
-    parser.add_argument("--config", type=str, default=None, help="配置文件路径")
-    parser.add_argument("--model_path", type=str, default=None, help="模型路径")
-    parser.add_argument("--adapter_path", type=str, default=None, help="LoRA 适配器路径")
-    parser.add_argument("--test_file", type=str, default=None, help="测试集路径")
+    parser.add_argument(
+        "--pred_file", type=str, default=None,
+        help="[模式1] LlamaFactory generated_predictions.jsonl 路径，无需加载模型"
+    )
+    parser.add_argument("--config", type=str, default=None, help="[模式2/3] 配置文件路径")
+    parser.add_argument("--model_path", type=str, default=None, help="[模式2] 合并模型路径")
+    parser.add_argument("--adapter_path", type=str, default=None, help="[模式3] LoRA 适配器路径")
+    parser.add_argument("--test_file", type=str, default=None, help="[模式2/3] 测试集路径")
     parser.add_argument("--output_file", type=str, default=None, help="输出结果路径")
-    parser.add_argument("--device", type=str, default="auto", help="推理设备")
+    parser.add_argument("--device", type=str, default="auto", help="推理设备（模式2/3）")
+    parser.add_argument(
+        "--labels", type=str, default=None,
+        help="[模式1] 标签列表，逗号分隔，如 '寿险意图,拒识'（不传则自动推断）"
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
 
+    # 模式1：直接解析 LlamaFactory 预测文件，无需加载模型
+    if args.pred_file:
+        labels = args.labels.split(",") if args.labels else None
+        evaluate_from_pred_file(
+            pred_file=args.pred_file,
+            labels=labels,
+            output_file=args.output_file,
+        )
+        return
+
+    # 模式2/3：加载模型进行推理评估
     if args.config and Path(args.config).exists():
         cfg = ProjectConfig.load(args.config)
     else:
