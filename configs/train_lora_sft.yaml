@@ -10,12 +10,12 @@
 ### ---------------------------------------------------------------------------
 
 # 模型名称或本地路径
-# 含义：HuggingFace Hub 上的模型标识 或 本地已下载模型的绝对路径
-# 理由：Qwen3-8B 是目标基座模型；如果模型已下载到本地，换成本地路径即可
+# 含义：HuggingFace Hub 上的模型标识 或 本地/挂载路径的绝对路径
+# 理由：Qwen3-8B 基座模型通过 ANS 网盘挂载（只读），直接读取挂载路径，无需拷贝
 # 可选项：任何 HuggingFace 支持的 causal LM，如 meta-llama/Meta-Llama-3-8B-Instruct,
 #         Qwen/Qwen2.5-7B-Instruct, baichuan-inc/Baichuan2-7B-Chat 等
-# 示例（使用本地模型）：/workspace/models/Qwen3-8B
-model_name_or_path: Qwen/Qwen3-8B
+# 挂载路径说明：/mnt/llm-ehpc/vo1633083-ro 为只读 ANS 挂载点
+model_name_or_path: /mnt/llm-ehpc/vo1633083-ro/llm_model/Qwen3-8B
 
 ### ---------------------------------------------------------------------------
 ### 训练方法 (Method)
