@@ -23,7 +23,7 @@ template: qwen
 ### 模型配置 (Model) — 方式二：使用基座模型 + LoRA 适配器（可选，取消下方注释）
 ### ---------------------------------------------------------------------------
 # 如果你不想导出合并模型，也可以直接加载基座模型 + LoRA 适配器进行推理：
-# model_name_or_path: /mnt/llm-ehpc-vo1633083-ro/llm_model/Qwen3-8B
+# model_name_or_path: /workspace/Qwen3-8B
 # adapter_name_or_path: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft
 # template: qwen
 # finetuning_type: lora

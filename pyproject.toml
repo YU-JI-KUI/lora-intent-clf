@@ -12,8 +12,10 @@ dependencies = [
     "datasets>=3.0.0",
     "accelerate>=1.0.0",
     "sentencepiece>=0.2.0",
-    "protobuf>=4.25.0",
-    "tensorboard>=2.9.0",
+    # protobuf 3.20+ 引入破坏性 API 变更，TensorBoard 2.9.0 与之不兼容
+    # 固定 <3.20 可从根本上避免 "Descriptors cannot be created directly" 报错
+    "protobuf>=3.9.2,<3.20.0",
+    "tensorboard>=2.9.0,<2.10.0",
 ]
 
 [project.optional-dependencies]

@@ -40,6 +40,12 @@ for arg in "$@"; do
     esac
 done
 
+# ------------------------------- 环境变量 ------------------------------------
+# protobuf >= 3.20 引入破坏性 API 变更，与 TensorBoard 2.9.0 不兼容，会报：
+#   TypeError: Descriptors cannot be created directly.
+# 强制使用纯 Python 实现作为双保险（根本解法是 pyproject.toml 锁定 protobuf<3.20）
+export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+
 # ------------------------------- 配置路径（绝对路径）--------------------------
 PROJECT_ROOT="/workspace/lora-intent-clf"
 TRAIN_CONFIG="${PROJECT_ROOT}/configs/train_lora_sft.yaml"

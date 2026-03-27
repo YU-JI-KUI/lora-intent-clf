@@ -56,7 +56,7 @@ class ModelConfig:
     # 模型名称或本地路径（HuggingFace Hub ID 或本地绝对路径）
     # 对应 YAML: model_name_or_path
     # 当前使用 ANS 网盘挂载路径（只读），无需拷贝到工作目录
-    model_name_or_path: str = "/mnt/llm-ehpc-vo1633083-ro/llm_model/Qwen3-8B"
+    model_name_or_path: str = "/workspace/Qwen3-8B"
 
     # 对话模板，需要与模型匹配
     # 对应 YAML: template
