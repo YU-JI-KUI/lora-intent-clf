@@ -318,6 +318,26 @@ eval_strategy: steps
 eval_steps: 500
 
 ### ---------------------------------------------------------------------------
+### DeepSpeed 配置 (分布式训练)
+### ---------------------------------------------------------------------------
+
+# DeepSpeed 配置文件路径
+# 含义：指定 DeepSpeed 的 JSON 配置文件，启用模型并行和显存优化
+# 理由：Qwen3-8B 的 FP16 权重约 16GB，单张 V100 (16GB) 无法加载完整模型。
+#       默认 DDP 模式下每张 GPU 都要加载完整模型副本，因此 OOM。
+#       ZeRO-3 将模型参数、梯度、优化器状态分片到所有 GPU 上，
+#       4 张 V100 各承担约 4GB 的模型权重，彻底解决显存不足问题。
+# 可选项：
+#   configs/deepspeed/ds_z3_config.json         — ZeRO-3 标准版（推荐，4×V100 够用）
+#   configs/deepspeed/ds_z3_offload_config.json  — ZeRO-3 + CPU Offload（显存极端紧张时使用，
+#                                                   会将部分参数和优化器状态卸载到 CPU 内存，
+#                                                   速度较慢但显存占用最低）
+# 注意：使用 DeepSpeed 时，LlamaFactory 会自动通过 torchrun 启动多 GPU 训练，
+#       无需手动指定 FORCE_TORCHRUN 或修改启动命令，
+#       直接 llamafactory-cli train 即可
+deepspeed: /workspace/lora-intent-clf/configs/deepspeed/ds_z3_config.json
+
+### ---------------------------------------------------------------------------
 ### 其他高级配置 (Advanced)
 ### ---------------------------------------------------------------------------
 

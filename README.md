@@ -62,6 +62,20 @@
 | 总显存 | 64GB |
 | 精度 | FP16（V100 不支持 BF16） |
 
+## DeepSpeed ZeRO-3 说明
+
+Qwen3-8B 的 FP16 权重约 16GB，而单张 V100 只有 16GB 显存。默认 DDP 模式下每张 GPU 都需要加载完整模型副本，所以在加载模型阶段就会 OOM。
+
+本项目使用 **DeepSpeed ZeRO-3** 解决此问题：将模型参数、梯度和优化器状态分片到所有 GPU 上，4 张 V100 各承担约 4GB 的模型权重，彻底解决显存不足问题，且不损失精度。
+
+```
+/workspace/lora-intent-clf/configs/deepspeed/
+├── ds_z3_config.json           # ZeRO-3 标准版（推荐，4×V100 够用）
+└── ds_z3_offload_config.json   # ZeRO-3 + CPU Offload（显存极端紧张时使用，速度较慢）
+```
+
+训练 YAML 中已通过 `deepspeed` 参数集成，无需额外操作。如果显存仍然紧张，可以在 YAML 中将 `ds_z3_config.json` 改为 `ds_z3_offload_config.json`。
+
 ## 快速开始
 
 ### 0. 前提条件

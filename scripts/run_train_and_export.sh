@@ -83,7 +83,8 @@ if [[ "${SKIP_TRAIN}" == "false" ]]; then
 
     # 使用 llamafactory-cli train 命令（兼容 v0.9.4.dev0）
     # 注意：YAML 中所有路径已使用绝对路径，无需 cd 到项目目录
-    llamafactory-cli train "${TRAIN_CONFIG}"
+    # FORCE_TORCHRUN=1 确保使用 torchrun 启动多 GPU 训练（配合 DeepSpeed ZeRO-3）
+    FORCE_TORCHRUN=1 llamafactory-cli train "${TRAIN_CONFIG}"
 
     if [[ $? -eq 0 ]]; then
         info "训练完成！"
