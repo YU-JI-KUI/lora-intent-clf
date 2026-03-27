@@ -289,12 +289,15 @@ ddp_timeout: 180000000
 ### 评估配置 (Evaluation)
 ### ---------------------------------------------------------------------------
 
-# 验证集比例（当使用 eval_dataset 时此参数被忽略）
+# 验证集比例
 # 含义：从训练集中划分多少比例的数据作为验证集
-# 理由：已通过 eval_dataset 指定了单独的验证集，此参数不再生效
-#       如果不想使用单独验证集，可以删除上方的 eval_dataset 并设置此值
+# ⚠️ 注意：当指定了 eval_dataset 时，此参数必须注释掉或删除！
+#          LlamaFactory 不允许同时设置 eval_dataset 和 val_size，否则会报错：
+#          "Cannot specify val_size if eval_dataset is not None"
+# 使用场景：如果你没有单独的验证集文件，可以删除上方的 eval_dataset，
+#           然后取消下面的注释，LlamaFactory 会自动从训练集中划分验证数据
 # 可选项：0.0, 0.05, 0.1, 0.2
-val_size: 0.1
+# val_size: 0.1
 
 # 每设备评估批次大小
 # 含义：每块 GPU 评估时每步处理的样本数
