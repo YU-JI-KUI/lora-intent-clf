@@ -11,7 +11,7 @@
 # 基座模型名称或本地路径
 # 含义：与训练时使用的基座模型完全一致
 # 注意：使用 ANS 网盘挂载路径（只读）
-model_name_or_path: /mnt/llm-ehpc/vo1633083-ro/llm_model/Qwen3-8B
+model_name_or_path: /mnt/llm-ehpc-vo1633083-ro/llm_model/Qwen3-8B
 
 # LoRA 适配器路径（使用绝对路径）
 # 含义：训练输出的 LoRA 适配器目录
