@@ -1,6 +1,10 @@
 {
+  "_comment": "LlamaFactory 数据集注册文件。此文件必须放在 dataset_dir 指定的目录下。",
+  "_comment2": "file_name 使用相对路径时，相对于本文件所在目录（即 dataset_dir）；也可使用绝对路径。",
+  "_comment3": "formatting 支持的格式: alpaca（默认）, sharegpt。详见下方各数据集的注释。",
+
   "intent_clf_train": {
-    "file_name": "data/train.json",
+    "file_name": "train.json",
     "formatting": "alpaca",
     "columns": {
       "prompt": "instruction",
@@ -8,8 +12,9 @@
       "response": "output"
     }
   },
+
   "intent_clf_val": {
-    "file_name": "data/val.json",
+    "file_name": "val.json",
     "formatting": "alpaca",
     "columns": {
       "prompt": "instruction",
@@ -17,8 +22,9 @@
       "response": "output"
     }
   },
+
   "intent_clf_test": {
-    "file_name": "data/test.json",
+    "file_name": "test.json",
     "formatting": "alpaca",
     "columns": {
       "prompt": "instruction",

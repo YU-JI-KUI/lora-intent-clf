@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
 # 一键执行 LoRA SFT 微调 + Adapter 导出
-# 兼容 LlamaFactory v0.9.0
+# 兼容 LlamaFactory v0.9.4.dev0
+# 工作目录：/workspace/lora-intent-clf
 # 用法: bash scripts/run_train_and_export.sh [--skip-train] [--skip-export]
+# 注意: 所有配置使用绝对路径，可以在任意目录下执行本脚本
 # =============================================================================
 
 set -euo pipefail
@@ -38,18 +40,20 @@ for arg in "$@"; do
     esac
 done
 
-# ------------------------------- 配置路径 ------------------------------------
-# 项目根目录（脚本所在目录的上一级）
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# ------------------------------- 配置路径（绝对路径）--------------------------
+PROJECT_ROOT="/workspace/lora-intent-clf"
 TRAIN_CONFIG="${PROJECT_ROOT}/configs/train_lora_sft.yaml"
 EXPORT_CONFIG="${PROJECT_ROOT}/configs/export_lora.yaml"
 
 # ------------------------------- 环境检查 ------------------------------------
 info "项目根目录: ${PROJECT_ROOT}"
 
+# 检查项目目录是否存在
+[[ -d "${PROJECT_ROOT}" ]] || error "项目目录不存在: ${PROJECT_ROOT}"
+
 # 检查 llamafactory-cli 是否可用
 if ! command -v llamafactory-cli &> /dev/null; then
-    error "未找到 llamafactory-cli，请先安装 LlamaFactory v0.9.0"
+    error "未找到 llamafactory-cli，请先安装 LlamaFactory v0.9.4.dev0"
 fi
 
 info "LlamaFactory CLI 已就绪"
@@ -57,6 +61,9 @@ info "LlamaFactory CLI 已就绪"
 # 检查配置文件
 [[ -f "${TRAIN_CONFIG}" ]] || error "训练配置文件不存在: ${TRAIN_CONFIG}"
 [[ -f "${EXPORT_CONFIG}" ]] || error "导出配置文件不存在: ${EXPORT_CONFIG}"
+
+# 检查 dataset_info.json
+[[ -f "${PROJECT_ROOT}/data/dataset_info.json" ]] || error "数据集配置不存在: ${PROJECT_ROOT}/data/dataset_info.json"
 
 # 检查 GPU
 if command -v nvidia-smi &> /dev/null; then
@@ -74,9 +81,8 @@ if [[ "${SKIP_TRAIN}" == "false" ]]; then
     info "配置文件: ${TRAIN_CONFIG}"
     info "=========================================="
 
-    cd "${PROJECT_ROOT}"
-
-    # 使用 llamafactory-cli train 命令（兼容 v0.9.0）
+    # 使用 llamafactory-cli train 命令（兼容 v0.9.4.dev0）
+    # 注意：YAML 中所有路径已使用绝对路径，无需 cd 到项目目录
     llamafactory-cli train "${TRAIN_CONFIG}"
 
     if [[ $? -eq 0 ]]; then
@@ -95,14 +101,12 @@ if [[ "${SKIP_EXPORT}" == "false" ]]; then
     info "配置文件: ${EXPORT_CONFIG}"
     info "=========================================="
 
-    cd "${PROJECT_ROOT}"
-
-    # 使用 llamafactory-cli export 命令（兼容 v0.9.0）
+    # 使用 llamafactory-cli export 命令（兼容 v0.9.4.dev0）
     llamafactory-cli export "${EXPORT_CONFIG}"
 
     if [[ $? -eq 0 ]]; then
         info "模型导出完成！"
-        info "合并模型保存在: models/qwen3-8b-intent-clf"
+        info "合并模型保存在: ${PROJECT_ROOT}/models/qwen3-8b-intent-clf"
     else
         error "模型导出失败，请检查日志"
     fi
@@ -114,11 +118,11 @@ fi
 info "=========================================="
 info "全部流程完成！"
 info ""
-info "训练输出:   saves/qwen3-8b/lora/sft"
-info "合并模型:   models/qwen3-8b-intent-clf"
+info "训练输出:   ${PROJECT_ROOT}/saves/qwen3-8b/lora/sft"
+info "合并模型:   ${PROJECT_ROOT}/models/qwen3-8b-intent-clf"
 info ""
 info "后续操作:"
-info "  1. 查看 TensorBoard:  tensorboard --logdir saves/qwen3-8b/lora/sft"
-info "  2. 使用合并模型推理:  llamafactory-cli chat configs/inference.yaml"
-info "  3. 使用 LoRA 推理:    llamafactory-cli chat configs/inference_lora.yaml"
+info "  1. 查看 TensorBoard:  tensorboard --logdir ${PROJECT_ROOT}/saves/qwen3-8b/lora/sft"
+info "  2. 使用合并模型推理:  llamafactory-cli chat ${PROJECT_ROOT}/configs/inference.yaml"
+info "  3. 使用 LoRA 推理:    llamafactory-cli chat ${PROJECT_ROOT}/configs/inference_lora.yaml"
 info "=========================================="

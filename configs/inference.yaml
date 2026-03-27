@@ -1,17 +1,18 @@
 ### =============================================================================
-### LlamaFactory v0.9.0 — 推理配置（使用导出后的合并模型）
+### LlamaFactory v0.9.4.dev0 — 推理配置（使用导出后的合并模型）
 ### 用途：在 export 之后对合并模型进行基础测试验证
+### 工作目录：/workspace/lora-intent-clf
 ### =============================================================================
 
 ### ---------------------------------------------------------------------------
 ### 模型配置 (Model) — 方式一：使用导出后的合并模型（推荐）
 ### ---------------------------------------------------------------------------
 
-# 合并模型路径
+# 合并模型路径（使用绝对路径）
 # 含义：指向 export_lora.yaml 导出的合并模型目录
 # 理由：合并模型已包含 LoRA 权重，无需额外加载适配器，推理速度更快
 # 注意：如果使用合并模型，不需要设置 adapter_name_or_path 和 finetuning_type
-model_name_or_path: models/qwen3-8b-intent-clf
+model_name_or_path: /workspace/lora-intent-clf/models/qwen3-8b-intent-clf
 
 # 对话模板
 # 含义：与训练时使用的模板 完全一致
@@ -23,7 +24,7 @@ template: qwen
 ### ---------------------------------------------------------------------------
 # 如果你不想导出合并模型，也可以直接加载基座模型 + LoRA 适配器进行推理：
 # model_name_or_path: Qwen/Qwen3-8B
-# adapter_name_or_path: saves/qwen3-8b/lora/sft
+# adapter_name_or_path: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft
 # template: qwen
 # finetuning_type: lora
 

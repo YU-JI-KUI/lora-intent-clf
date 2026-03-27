@@ -103,14 +103,14 @@ class LoraConfig:
 class DataConfig:
     """数据相关配置"""
 
-    # 训练数据文件路径
-    train_file: str = "data/train.json"
+    # 训练数据文件路径（使用绝对路径）
+    train_file: str = "/workspace/lora-intent-clf/data/train.json"
 
-    # 验证数据文件路径
-    val_file: str = "data/val.json"
+    # 验证数据文件路径（使用绝对路径）
+    val_file: str = "/workspace/lora-intent-clf/data/val.json"
 
-    # 测试数据文件路径
-    test_file: str = "data/test.json"
+    # 测试数据文件路径（使用绝对路径）
+    test_file: str = "/workspace/lora-intent-clf/data/test.json"
 
     # 最大序列长度
     # 对应 YAML: cutoff_len
@@ -143,9 +143,9 @@ class DataConfig:
 class TrainingConfig:
     """训练超参数配置"""
 
-    # 输出目录
+    # 输出目录（使用绝对路径）
     # 对应 YAML: output_dir
-    output_dir: str = "saves/qwen3-8b/lora/sft"
+    output_dir: str = "/workspace/lora-intent-clf/saves/qwen3-8b/lora/sft"
 
     # 训练轮数
     # 对应 YAML: num_train_epochs
@@ -232,9 +232,9 @@ class TrainingConfig:
 class ExportConfig:
     """模型导出配置"""
 
-    # 导出目录
+    # 导出目录（使用绝对路径）
     # 对应 YAML: export_dir
-    export_dir: str = "models/qwen3-8b-intent-clf"
+    export_dir: str = "/workspace/lora-intent-clf/models/qwen3-8b-intent-clf"
 
     # 导出分片大小 (GB)
     # 对应 YAML: export_size

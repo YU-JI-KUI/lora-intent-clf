@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
 # 推理测试脚本 — 启动交互式聊天测试微调效果
-# 兼容 LlamaFactory v0.9.0
+# 兼容 LlamaFactory v0.9.4.dev0
+# 工作目录：/workspace/lora-intent-clf
 # 用法: bash scripts/run_inference.sh [--lora]
+# 注意: 所有配置使用绝对路径，可以在任意目录下执行本脚本
 # =============================================================================
 
 set -euo pipefail
@@ -32,8 +34,8 @@ for arg in "$@"; do
     esac
 done
 
-# ------------------------------- 配置路径 ------------------------------------
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# ------------------------------- 配置路径（绝对路径）--------------------------
+PROJECT_ROOT="/workspace/lora-intent-clf"
 
 if [[ "${USE_LORA}" == "true" ]]; then
     CONFIG="${PROJECT_ROOT}/configs/inference_lora.yaml"
@@ -51,5 +53,4 @@ info "配置文件: ${CONFIG}"
 info "输入文本后按 Enter 进行推理，输入 exit 退出"
 info "=========================================="
 
-cd "${PROJECT_ROOT}"
 llamafactory-cli chat "${CONFIG}"

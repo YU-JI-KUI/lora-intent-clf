@@ -1,7 +1,8 @@
 ### =============================================================================
-### LlamaFactory v0.9.0 — LoRA SFT 训练配置（意图识别分类任务）
+### LlamaFactory v0.9.4.dev0 — LoRA SFT 训练配置（意图识别分类任务）
 ### 适用硬件：4 × V100 (16GB)，总显存 64GB
 ### 任务：寿险意图 / 拒识 二分类
+### 工作目录：/workspace/lora-intent-clf
 ### =============================================================================
 
 ### ---------------------------------------------------------------------------
@@ -13,6 +14,7 @@
 # 理由：Qwen3-8B 是目标基座模型；如果模型已下载到本地，换成本地路径即可
 # 可选项：任何 HuggingFace 支持的 causal LM，如 meta-llama/Meta-Llama-3-8B-Instruct,
 #         Qwen/Qwen2.5-7B-Instruct, baichuan-inc/Baichuan2-7B-Chat 等
+# 示例（使用本地模型）：/workspace/models/Qwen3-8B
 model_name_or_path: Qwen/Qwen3-8B
 
 ### ---------------------------------------------------------------------------
@@ -65,18 +67,67 @@ lora_dropout: 0.05
 ### ---------------------------------------------------------------------------
 ### 数据集配置 (Dataset)
 ### ---------------------------------------------------------------------------
+###
+### ⚠️ 重要：dataset_dir 和 dataset 的关系说明
+###
+### LlamaFactory 加载数据的流程如下：
+###
+###   1. 根据 dataset_dir 找到 dataset_info.json 文件
+###      → LlamaFactory 会在 dataset_dir 目录下查找名为 dataset_info.json 的文件
+###      → 路径拼接为: {dataset_dir}/dataset_info.json
+###      → 所以 dataset_dir 必须是包含 dataset_info.json 的目录
+###
+###   2. 根据 dataset 参数在 dataset_info.json 中查找数据集定义
+###      → dataset 的值（如 intent_clf_train）是 dataset_info.json 中的 key
+###      → 可以用逗号分隔多个数据集名称，如 dataset1,dataset2
+###
+###   3. 根据数据集定义中的 file_name 字段加载实际数据文件
+###      → 如果 file_name 是相对路径：相对于 dataset_dir 进行拼接
+###        例如 dataset_dir=/workspace/lora-intent-clf/data, file_name=train.json
+###        → 实际路径: /workspace/lora-intent-clf/data/train.json
+###      → 如果 file_name 是绝对路径：直接使用该绝对路径
+###        例如 file_name=/workspace/lora-intent-clf/data/train.json
+###        → 直接加载
+###
+### 因此配置要点：
+###   - dataset_dir 必须使用绝对路径（避免因执行目录不同导致找不到文件）
+###   - dataset_info.json 必须放在 dataset_dir 指定的目录下
+###   - file_name 推荐使用相对于 dataset_dir 的路径，或者使用绝对路径
+###
+### 本项目的配置：
+###   dataset_dir: /workspace/lora-intent-clf/data
+###   → LlamaFactory 会加载 /workspace/lora-intent-clf/data/dataset_info.json
+###   → dataset_info.json 中的 file_name 使用相对路径（如 train.json）
+###   → 实际加载: /workspace/lora-intent-clf/data/train.json
+###
 
-# 数据集名称
-# 含义：在 dataset_info.json 中注册的数据集名称
+# 训练数据集名称
+# 含义：在 dataset_info.json 中注册的数据集名称（JSON 的 key）
 # 理由：使用自定义的意图分类训练集
 # 可选项：可以逗号分隔多个数据集名称，如 intent_clf_train,other_dataset
+# 注意：这里只指定训练集，验证集通过下方的 eval_dataset 单独指定
 dataset: intent_clf_train
 
-# 数据集目录
+# 验证数据集名称
+# 含义：在 dataset_info.json 中注册的验证数据集名称
+# 理由：使用单独的验证集进行训练过程中的评估，而不是从训练集中随机划分
+# 注意：如果指定了 eval_dataset，则下面的 val_size 参数将被忽略
+#       测试集（intent_clf_test）不在训练中使用，而是在训练完成后
+#       通过 llamafactory-cli chat 或 Python 评估脚本单独评估
+eval_dataset: intent_clf_val
+
+# 数据集目录（⚠️ 必须使用绝对路径）
 # 含义：dataset_info.json 所在的目录路径
-# 理由：指向项目根目录，因为 dataset_info.json 在项目根下的 data/ 中
-# 注意：这里需要和 dataset_info.json 中的 file_name 路径配合使用
-dataset_dir: .
+# 理由：LlamaFactory 会在此目录下查找 dataset_info.json，然后根据其中的
+#       file_name 字段定位实际的数据文件
+# ⚠️ 警告：如果使用相对路径（如 . 或 ./data），当你的执行目录不是项目根目录时
+#          会报错 "No such file or directory './dataset_info.json'"
+#          所以这里必须使用绝对路径！
+# 路径关系：
+#   dataset_dir = /workspace/lora-intent-clf/data
+#   → 加载 /workspace/lora-intent-clf/data/dataset_info.json
+#   → 再根据 dataset_info.json 中的 file_name 加载数据文件
+dataset_dir: /workspace/lora-intent-clf/data
 
 # 对话模板
 # 含义：选择与模型匹配的对话模板格式
@@ -114,10 +165,10 @@ preprocessing_num_workers: 16
 ### 输出配置 (Output)
 ### ---------------------------------------------------------------------------
 
-# 输出目录
+# 输出目录（使用绝对路径）
 # 含义：训练产出（checkpoint、日志、loss 图）的保存路径
 # 理由：按照 模型/方法/阶段 的层级组织，方便管理多次实验
-output_dir: saves/qwen3-8b/lora/sft
+output_dir: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft
 
 # 日志记录间隔
 # 含义：每隔多少个训练步骤记录一次日志（loss 等指标）
@@ -151,7 +202,7 @@ overwrite_output_dir: true
 
 # 日志输出目标
 # 含义：除了控制台之外，还将日志输出到哪些平台
-# 理由：集成 TensorBoard 以提供丰富的训练可视化
+# 理由：集成 TensorBoard 2.9.0 以提供丰富的训练可视化
 # 可选项：tensorboard, wandb, mlflow, none（可逗号分隔多个）
 report_to: tensorboard
 
@@ -238,10 +289,10 @@ ddp_timeout: 180000000
 ### 评估配置 (Evaluation)
 ### ---------------------------------------------------------------------------
 
-# 验证集比例
+# 验证集比例（当使用 eval_dataset 时此参数被忽略）
 # 含义：从训练集中划分多少比例的数据作为验证集
-# 理由：0.1（10%）用于训练过程中的评估。如果已有单独的验证集，可设为 0
-# 注意：此参数仅在没有指定单独验证集时生效
+# 理由：已通过 eval_dataset 指定了单独的验证集，此参数不再生效
+#       如果不想使用单独验证集，可以删除上方的 eval_dataset 并设置此值
 # 可选项：0.0, 0.05, 0.1, 0.2
 val_size: 0.1
 

@@ -1,6 +1,7 @@
 ### =============================================================================
-### LlamaFactory v0.9.0 — LoRA Adapter 导出配置（合并适配器到基座模型）
+### LlamaFactory v0.9.4.dev0 — LoRA Adapter 导出配置（合并适配器到基座模型）
 ### 注意：导出时 不要使用量化模型 或设置 quantization_bit，否则会导致精度丢失
+### 工作目录：/workspace/lora-intent-clf
 ### =============================================================================
 
 ### ---------------------------------------------------------------------------
@@ -13,11 +14,11 @@
 # 可选项：任何训练时使用的基座模型路径
 model_name_or_path: Qwen/Qwen3-8B
 
-# LoRA 适配器路径
+# LoRA 适配器路径（使用绝对路径）
 # 含义：训练输出的 LoRA 适配器目录路径
 # 理由：指向训练配置中 output_dir 的实际输出路径
 # 注意：可以指定多个适配器目录（逗号分隔）进行合并
-adapter_name_or_path: saves/qwen3-8b/lora/sft
+adapter_name_or_path: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft
 
 # 对话模板
 # 含义：与训练时使用的模板 完全一致
@@ -33,11 +34,11 @@ finetuning_type: lora
 ### 导出配置 (Export)
 ### ---------------------------------------------------------------------------
 
-# 导出目录
+# 导出目录（使用绝对路径）
 # 含义：合并后的完整模型保存路径
 # 理由：将 LoRA 适配器合并进基座模型后的输出目录
 # 注意：导出后可以像普通 HuggingFace 模型一样加载和使用
-export_dir: models/qwen3-8b-intent-clf
+export_dir: /workspace/lora-intent-clf/models/qwen3-8b-intent-clf
 
 # 导出分片大小 (GB)
 # 含义：每个模型分片文件的最大大小（单位 GB）
