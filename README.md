@@ -412,6 +412,46 @@ bash /workspace/lora-intent-clf/scripts/run_train_and_export.sh --skip-train   #
 bash /workspace/lora-intent-clf/scripts/run_train_and_export.sh --skip-export   # 仅训练
 ```
 
+### A6. 后台训练（SSH 断开/重启不丢失）
+
+```bash
+# 后台启动训练（nohup，断开 SSH 也不中断）
+bash /workspace/lora-intent-clf/scripts/train_background.sh
+
+# 查看实时日志
+bash /workspace/lora-intent-clf/scripts/train_background.sh --log
+# 或
+tail -f /workspace/lora-intent-clf/logs/train_latest.log
+
+# 查看运行状态
+bash /workspace/lora-intent-clf/scripts/train_background.sh --status
+
+# 终止训练
+bash /workspace/lora-intent-clf/scripts/train_background.sh --kill
+```
+
+### A7. 查看 TensorBoard
+
+```bash
+# 前台启动（Ctrl+C 退出，不影响训练）
+bash /workspace/lora-intent-clf/scripts/run_tensorboard.sh
+
+# 后台启动
+bash /workspace/lora-intent-clf/scripts/run_tensorboard.sh --background
+
+# 指定端口
+bash /workspace/lora-intent-clf/scripts/run_tensorboard.sh --port 6007
+
+# 终止后台 TensorBoard
+bash /workspace/lora-intent-clf/scripts/run_tensorboard.sh --kill
+```
+
+> **SSH 隧道访问**（服务器无公网端口时）：在本地机器执行：
+> ```bash
+> ssh -L 6006:localhost:6006 user@<服务器IP>
+> ```
+> 然后浏览器打开 `http://localhost:6006`
+
 ---
 
 ## 方案 B：使用 Python 脚本
@@ -429,21 +469,25 @@ pip install -r requirements-dev.txt
 
 ### B1. 训练
 
+> **⚠️ 关于 OOM 问题**：直接用 `python src/train.py` 会在单 GPU 上加载完整模型，8B FP16 ≈ 16GB 直接撑满 V100，必然 OOM。解决方式是用 `torchrun` 启动并开启 DeepSpeed ZeRO-3，原理与 LlamaFactory CLI 方案相同——将模型参数分片到多张 GPU。
+
 ```bash
 cd /workspace/lora-intent-clf
 
-# 使用默认配置训练
-python src/train.py
+# ✅ 推荐：多卡 + DeepSpeed ZeRO-3（解决 OOM）
+torchrun --nproc_per_node=4 src/train.py
 
-# 使用自定义配置文件
-python src/train.py --config my_config.json
+# ✅ 后台运行（防止 SSH 断开丢失任务）
+bash scripts/train_background.sh --python
 
-# 命令行覆盖参数
-python src/train.py \
-    --model_name_or_path /workspace/Qwen3-8B \
+# 命令行覆盖参数（仍需 torchrun 启动）
+torchrun --nproc_per_node=4 src/train.py \
     --lora_rank 32 \
     --learning_rate 2e-4 \
-    --num_train_epochs 10
+    --num_train_epochs 2
+
+# 禁用 DeepSpeed（仅单卡测试小模型时使用）
+torchrun --nproc_per_node=1 src/train.py --deepspeed none
 ```
 
 可用的命令行参数（均有默认值，可按需覆盖）：

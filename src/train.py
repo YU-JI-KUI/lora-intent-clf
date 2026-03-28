@@ -3,14 +3,27 @@ Python 微调脚本 — 使用 transformers + peft 直接进行 LoRA SFT
 
 说明：
   本脚本与 LlamaFactory YAML 配置方案功能等价，参数一一对应。
-  适用于需要更灵活控制训练流程的场景。
+  支持 DeepSpeed ZeRO-3 多卡分片，解决 8B 模型单卡 OOM 问题。
 
-用法：
-  uv run python src/train.py                          # 使用默认配置
-  uv run python src/train.py --config config.json     # 使用自定义配置
-  uv run python src/train.py --model_name_or_path ... # 命令行覆盖
+启动方式：
+  # 单卡（不推荐 8B 模型，会 OOM）
+  python src/train.py
+
+  # 多卡 + DeepSpeed ZeRO-3（推荐，4×V100 16GB）
+  torchrun --nproc_per_node=4 src/train.py
+
+  # 指定 DeepSpeed 配置（默认已在 config.py 中配置）
+  torchrun --nproc_per_node=4 src/train.py --deepspeed configs/deepspeed/ds_z3_config.json
+
+  # 后台运行（推荐，断开 SSH 不影响训练）
+  bash scripts/train_background.sh --python
 
 对应 YAML: configs/train_lora_sft.yaml
+
+OOM 解决方案：
+  DeepSpeed ZeRO-3 将模型参数分片到多张 GPU，每张 GPU 只持有 1/N 的参数，
+  从根本上解决 8B 模型在 16GB V100 上无法加载的问题。
+  启动时必须使用 torchrun（而非 python），否则 DeepSpeed 不会生效。
 """
 
 from __future__ import annotations
@@ -167,10 +180,14 @@ def build_model_and_tokenizer(cfg: ProjectConfig):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # 加载模型到 CPU（不指定 device_map）
+    # DeepSpeed ZeRO-3 会自动将模型分片到多张 GPU，不能提前指定 device_map
+    # 如果不使用 DeepSpeed（单卡/普通 DDP），模型会被 Trainer 自动移到 GPU
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model.model_name_or_path,
         trust_remote_code=cfg.model.trust_remote_code,
         torch_dtype=torch.float16 if cfg.training.fp16 else torch.float32,
+        # 注意：不能加 device_map="auto"，否则与 DeepSpeed ZeRO-3 冲突
     )
 
     # 配置 LoRA
@@ -249,6 +266,10 @@ def train(cfg: ProjectConfig) -> None:
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         greater_is_better=False,
+        # DeepSpeed ZeRO-3 配置（解决多卡 OOM）
+        # 需配合 torchrun --nproc_per_node=N 启动，否则 DeepSpeed 不生效
+        # YAML: deepspeed
+        deepspeed=cfg.training.deepspeed,
     )
 
     data_collator = DataCollatorForSeq2Seq(
@@ -313,6 +334,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save_steps", type=int, default=None)
     parser.add_argument("--eval_steps", type=int, default=None)
     parser.add_argument("--report_to", type=str, default=None)
+    parser.add_argument(
+        "--deepspeed", type=str, default=None,
+        help="DeepSpeed 配置文件路径（如 configs/deepspeed/ds_z3_config.json）"
+             "。设为 'none' 禁用 DeepSpeed。需配合 torchrun 启动。",
+    )
 
     return parser.parse_args()
 
@@ -327,6 +353,10 @@ def main():
     else:
         logger.info("使用默认配置")
         cfg = ProjectConfig()
+
+    # --deepspeed none 表示显式禁用
+    if args.deepspeed is not None and args.deepspeed.lower() == "none":
+        args.deepspeed = None
 
     # 命令行参数覆盖
     overrides = {k: v for k, v in vars(args).items() if v is not None and k != "config"}

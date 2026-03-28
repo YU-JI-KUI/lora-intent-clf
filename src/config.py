@@ -36,6 +36,7 @@
   │ eval_steps                      │ eval_steps                      │
   │ gradient_checkpointing          │ gradient_checkpointing          │
   │ report_to                       │ report_to                       │
+  │ deepspeed                       │ deepspeed                       │
   │ cutoff_len (→ max_seq_length)   │ cutoff_len                      │
   │ labels                          │ (在 instruction prompt 中定义)   │
   └─────────────────────────────────┴─────────────────────────────────┘
@@ -227,6 +228,13 @@ class TrainingConfig:
     # 对应 YAML: report_to
     # 可选项: tensorboard, wandb, mlflow, none
     report_to: str = "tensorboard"
+
+    # DeepSpeed 配置文件路径（可选，用于多卡分布式训练）
+    # 对应 YAML: deepspeed
+    # 用法：需配合 torchrun 启动，不能用 python 直接运行
+    #   torchrun --nproc_per_node=4 src/train.py --deepspeed configs/deepspeed/ds_z3_config.json
+    # None 表示不使用 DeepSpeed（单卡或普通 DDP）
+    deepspeed: Optional[str] = "/workspace/lora-intent-clf/configs/deepspeed/ds_z3_config.json"
 
 
 @dataclass
