@@ -28,6 +28,8 @@ OOM 解决方案：
 
 from __future__ import annotations
 
+import compat  # numpy 兼容垫片，必须在 deepspeed/torch 之前
+
 import argparse
 import json
 import logging
