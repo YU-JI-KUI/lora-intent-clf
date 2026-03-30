@@ -24,7 +24,10 @@
 ```
 /workspace/lora-intent-clf/
 ├── README.md                          # 本文档
-├── pyproject.toml                     # ruff 代码检查配置
+├── pyproject.toml                     # 项目依赖 + ruff 配置（uv 使用此文件）
+├── uv.toml                            # uv 配置（内部 Nexus 仓库地址）
+├── requirements.txt                   # pip 备选依赖（无 uv 时使用）
+├── requirements-dev.txt               # 开发依赖（ruff + pytest）
 ├── .python-version                    # Python 版本锁定（3.10）
 ├── .gitignore
 │
@@ -32,7 +35,11 @@
 │   ├── train_lora_sft.yaml           #   训练配置（带详细注释）
 │   ├── export_lora.yaml              #   LoRA 适配器导出/合并配置
 │   ├── inference.yaml                #   推理配置（合并模型）
-│   └── inference_lora.yaml           #   推理配置（基座 + LoRA 适配器）
+│   ├── inference_lora.yaml           #   推理配置（基座 + LoRA 适配器）
+│   ├── predict_lora.yaml             #   批量预测配置（评估用）
+│   └── deepspeed/
+│       ├── ds_z3_config.json         #   ZeRO-3 标准版
+│       └── ds_z3_offload_config.json #   ZeRO-3 + CPU Offload
 │
 ├── data/                              # 数据目录（也是 dataset_dir 的值）
 │   ├── dataset_info.json             #   LlamaFactory 数据集注册文件
@@ -41,9 +48,12 @@
 │   └── test.json                     #   测试集（示例数据）
 │
 ├── scripts/                           # Shell 脚本
+│   ├── setup_env.sh                  #   环境初始化（uv，跨机器）
 │   ├── run_train_and_export.sh       #   一键训练 + 导出
-│   ├── run_inference.sh              #   推理测试
-│   └── setup_github.sh              #   创建 GitHub 仓库
+│   ├── train_background.sh           #   后台训练（SIGHUP 免疫）
+│   ├── run_tensorboard.sh            #   TensorBoard 启动
+│   ├── run_evaluate.sh               #   批量评估
+│   └── run_inference.sh              #   推理测试
 │
 └── src/                               # Python 脚本
     ├── __init__.py
@@ -91,13 +101,41 @@ nvidia-smi
 
 # 检查 TensorBoard（2.9.0）
 tensorboard --version
+```
 
-# 安装 Python 依赖（使用 pip，不依赖 uv）
+**依赖管理（uv）**
+
+本项目使用 [uv](https://docs.astral.sh/uv/) 管理 Python 依赖，支持多机器、多容器环境的一键初始化。内部依赖来源为公司 Nexus PyPI 仓库，已在 `uv.toml` 中配置好。
+
+```bash
+# 一键初始化环境（首次部署）
+bash scripts/setup_env.sh
+
+# 同时安装开发依赖（ruff + pytest）
+bash scripts/setup_env.sh --dev
+
+# 同时安装 LlamaFactory（如果机器上没有全局安装）
+bash scripts/setup_env.sh --llamafactory
+
+# 激活虚拟环境
+source .venv/bin/activate
+```
+
+`setup_env.sh` 会自动：
+1. 检测 uv 是否已安装，没有则自动安装
+2. 创建 `.venv` 虚拟环境
+3. 从 Nexus 内部仓库安装所有依赖
+4. 检测 GPU 数量并打印对应的训练配置建议
+
+**备选方案（无 uv 的机器）**
+
+如果机器上无法安装 uv，也可以直接用 pip：
+
+```bash
 pip install -r requirements.txt
 ```
 
-> **关于依赖管理**：本项目使用 `requirements.txt` 管理依赖，无需 uv。
-> 服务器已预装的版本见 `requirements.txt` 注释，直接 `pip install -r requirements.txt` 即可。
+> `requirements.txt` 与 `pyproject.toml` 保持版本一致，两者均可使用。
 
 ### 1. 准备数据
 

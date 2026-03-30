@@ -1,5 +1,36 @@
-# 依赖管理已迁移到 requirements.txt / requirements-dev.txt
-# 此文件仅保留代码检查工具配置
+[project]
+name = "lora-intent-clf"
+version = "0.1.0"
+description = "LoRA 微调意图识别二分类（寿险意图 / 拒识）"
+requires-python = ">=3.10"
+dependencies = [
+    "torch==2.6.0",
+    "transformers==4.56.1",
+    "peft==0.17.1",
+    "datasets==4.0.0",
+    "accelerate==1.10.1",
+    "sentencepiece==0.2.1",
+    # protobuf 4.25.x 与 TensorBoard 2.9.0 存在 API 不兼容问题
+    # 运行时绕过方案：export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+    # 已在 run_train_and_export.sh 中设置
+    "protobuf==4.25.8",
+    "tensorboard==2.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff==0.13.2",
+    "pytest==7.4.1",
+]
+
+[tool.uv]
+# 优先使用公司内部 Nexus 仓库，PyPI 作为回退
+index-url = "http://nexus.pajk-ent.com/repository/pypi-all/simple"
+# 允许 http（内网仓库）
+allow-insecure-host = ["nexus.pajk-ent.com"]
+
+[tool.uv.pip]
+index-url = "http://nexus.pajk-ent.com/repository/pypi-all/simple"
 
 [tool.ruff]
 target-version = "py310"

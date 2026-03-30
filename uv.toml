@@ -1,0 +1,11 @@
+# uv 配置文件 — 公司内部 Nexus PyPI 仓库
+# 文档：https://docs.astral.sh/uv/configuration/
+
+# 包索引：优先使用内部 Nexus，包含 PyPI 镜像
+index-url = "http://nexus.pajk-ent.com/repository/pypi-all/simple"
+
+# 允许内网 http 地址（无 TLS 证书）
+allow-insecure-host = ["nexus.pajk-ent.com"]
+
+# 不自动更新 uv 自身（保持版本稳定）
+# self-update = false
