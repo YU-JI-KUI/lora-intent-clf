@@ -9,6 +9,14 @@ datasets==4.0.0
 accelerate==1.10.1
 sentencepiece==0.2.1
 
+# DeepSpeed — 多卡分布式训练（ZeRO-3），解决 8B 模型单卡 OOM
+# ⚠️ 版本下限 >= 0.14.0 的原因（numpy 兼容性）：
+#   numpy 1.20 将 np.bool8 / np.bool / np.int / np.float 等别名标记为 deprecated，
+#   numpy 1.24 正式删除。torch 2.6.0 依赖 numpy >= 1.26，因此低版本 DeepSpeed
+#   使用已删除的 np.bool8 等 API 会报 AttributeError。
+#   DeepSpeed >= 0.14.0 已修复所有 numpy 1.24+ 兼容问题。
+deepspeed>=0.14.0
+
 # protobuf 4.25.x 与 TensorBoard 2.9.0 存在 API 不兼容问题：
 #   TypeError: Descriptors cannot be created directly.
 # 已在 run_train_and_export.sh 中设置

@@ -10,6 +10,11 @@ dependencies = [
     "datasets==4.0.0",
     "accelerate==1.10.1",
     "sentencepiece==0.2.1",
+    # DeepSpeed：多卡分布式训练（ZeRO-3），解决 8B 模型单卡 OOM
+    # >= 0.14.0 原因：numpy 1.24 删除了 np.bool8 等别名，低版本 DeepSpeed 会报
+    # AttributeError: module numpy has no attribute 'bool8'
+    # torch 2.6.0 依赖 numpy >= 1.26，因此 deepspeed 必须 >= 0.14.0
+    "deepspeed>=0.14.0",
     # protobuf 4.25.x 与 TensorBoard 2.9.0 存在 API 不兼容问题
     # 运行时绕过方案：export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
     # 已在 run_train_and_export.sh 中设置
