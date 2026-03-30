@@ -17,9 +17,9 @@
 ### 模型配置 (Model)
 ### ---------------------------------------------------------------------------
 
-model_name_or_path: /workspace/Qwen3-8B
+model_name_or_path: /workspace/Qwen3-8B  # ⚠️ 由 machine.env 覆盖 (MODEL_PATH)
 
-adapter_name_or_path: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft
+adapter_name_or_path: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft  # ⚠️ 由 machine.env 覆盖 (OUTPUT_DIR)
 
 # 对话模板，必须与训练时一致
 template: qwen
@@ -54,7 +54,7 @@ predict_with_generate: true
 dataset: intent_clf_test
 
 # 数据集目录（绝对路径），内含 dataset_info.json
-dataset_dir: /workspace/lora-intent-clf/data
+dataset_dir: /workspace/lora-intent-clf/data  # ⚠️ 由 machine.env 覆盖 (DATASET_DIR)
 
 # 最大序列长度，与训练保持一致
 cutoff_len: 512
@@ -90,7 +90,7 @@ fp16: true
 # 运行后会生成：
 #   output_dir/generated_predictions.jsonl  ← 主要文件，每行包含 predict 和 label
 #   output_dir/predict_results.json         ← 汇总指标（仅含 BLEU 等，不含 F1）
-output_dir: /workspace/lora-intent-clf/saves/qwen3-8b/lora/predict
+output_dir: /workspace/lora-intent-clf/saves/qwen3-8b/lora/predict  # ⚠️ 由 machine.env 覆盖 (PREDICT_OUTPUT_DIR)
 
 # 不覆盖已有输出（设为 true 则每次都重新生成）
 overwrite_output_dir: true

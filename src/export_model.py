@@ -22,7 +22,7 @@ import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from config import ProjectConfig
+from config import ProjectConfig, load_project_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -122,7 +122,7 @@ def main():
     if args.config and Path(args.config).exists():
         cfg = ProjectConfig.load(args.config)
     else:
-        cfg = ProjectConfig()
+        cfg = load_project_config()
 
     # 命令行覆盖
     if args.model_name_or_path:

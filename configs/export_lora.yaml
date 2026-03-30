@@ -12,13 +12,13 @@
 # 含义：与训练时使用的基座模型 完全一致，导出时将 LoRA 权重合并回该模型
 # 理由：必须与训练配置中的 model_name_or_path 保持一致
 # 注意：本地路径，确保与训练配置保持一致
-model_name_or_path: /workspace/Qwen3-8B
+model_name_or_path: /workspace/Qwen3-8B  # ⚠️ 由 machine.env 覆盖 (MODEL_PATH)
 
 # LoRA 适配器路径（使用绝对路径）
 # 含义：训练输出的 LoRA 适配器目录路径
 # 理由：指向训练配置中 output_dir 的实际输出路径
 # 注意：可以指定多个适配器目录（逗号分隔）进行合并
-adapter_name_or_path: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft
+adapter_name_or_path: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft  # ⚠️ 由 machine.env 覆盖 (OUTPUT_DIR)
 
 # 对话模板
 # 含义：与训练时使用的模板 完全一致
@@ -38,7 +38,7 @@ finetuning_type: lora
 # 含义：合并后的完整模型保存路径
 # 理由：将 LoRA 适配器合并进基座模型后的输出目录
 # 注意：导出后可以像普通 HuggingFace 模型一样加载和使用
-export_dir: /workspace/lora-intent-clf/models/qwen3-8b-intent-clf
+export_dir: /workspace/lora-intent-clf/models/qwen3-8b-intent-clf  # ⚠️ 由 machine.env 覆盖 (EXPORT_DIR)
 
 # 导出分片大小 (GB)
 # 含义：每个模型分片文件的最大大小（单位 GB）

@@ -11,11 +11,11 @@
 # 基座模型名称或本地路径
 # 含义：与训练时使用的基座模型完全一致
 # 注意：本地路径
-model_name_or_path: /workspace/Qwen3-8B
+model_name_or_path: /workspace/Qwen3-8B  # ⚠️ 由 machine.env 覆盖 (MODEL_PATH)
 
 # LoRA 适配器路径（使用绝对路径）
 # 含义：训练输出的 LoRA 适配器目录
-adapter_name_or_path: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft
+adapter_name_or_path: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft  # ⚠️ 由 machine.env 覆盖 (OUTPUT_DIR)
 
 # 对话模板
 # 含义：与训练时使用的模板完全一致

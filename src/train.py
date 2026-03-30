@@ -46,7 +46,7 @@ from transformers import (
     TrainingArguments,
 )
 
-from config import ProjectConfig, DataConfig
+from config import ProjectConfig, DataConfig, load_project_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -352,7 +352,7 @@ def main():
         cfg = ProjectConfig.load(args.config)
     else:
         logger.info("使用默认配置")
-        cfg = ProjectConfig()
+        cfg = load_project_config()
 
     # --deepspeed none 表示显式禁用
     if args.deepspeed is not None and args.deepspeed.lower() == "none":

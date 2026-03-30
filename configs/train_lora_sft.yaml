@@ -15,7 +15,7 @@
 # 可选项：任何 HuggingFace 支持的 causal LM，如 meta-llama/Meta-Llama-3-8B-Instruct,
 #         Qwen/Qwen2.5-7B-Instruct, baichuan-inc/Baichuan2-7B-Chat 等
 # 本地路径：/workspace/Qwen3-8B
-model_name_or_path: /workspace/Qwen3-8B
+model_name_or_path: /workspace/Qwen3-8B  # ⚠️ 由 machine.env 覆盖 (MODEL_PATH)
 
 ### ---------------------------------------------------------------------------
 ### 训练方法 (Method)
@@ -127,7 +127,7 @@ eval_dataset: intent_clf_val
 #   dataset_dir = /workspace/lora-intent-clf/data
 #   → 加载 /workspace/lora-intent-clf/data/dataset_info.json
 #   → 再根据 dataset_info.json 中的 file_name 加载数据文件
-dataset_dir: /workspace/lora-intent-clf/data
+dataset_dir: /workspace/lora-intent-clf/data  # ⚠️ 由 machine.env 覆盖 (DATASET_DIR)
 
 # 对话模板
 # 含义：选择与模型匹配的对话模板格式
@@ -168,7 +168,7 @@ preprocessing_num_workers: 16
 # 输出目录（使用绝对路径）
 # 含义：训练产出（checkpoint、日志、loss 图）的保存路径
 # 理由：按照 模型/方法/阶段 的层级组织，方便管理多次实验
-output_dir: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft
+output_dir: /workspace/lora-intent-clf/saves/qwen3-8b/lora/sft  # ⚠️ 由 machine.env 覆盖 (OUTPUT_DIR)
 
 # 日志记录间隔
 # 含义：每隔多少个训练步骤记录一次日志（loss 等指标）
@@ -335,7 +335,7 @@ eval_steps: 500
 # 注意：使用 DeepSpeed 时，LlamaFactory 会自动通过 torchrun 启动多 GPU 训练，
 #       无需手动指定 FORCE_TORCHRUN 或修改启动命令，
 #       直接 llamafactory-cli train 即可
-deepspeed: /workspace/lora-intent-clf/configs/deepspeed/ds_z3_config.json
+deepspeed: /workspace/lora-intent-clf/configs/deepspeed/ds_z3_config.json  # ⚠️ 由 machine.env 覆盖 (DEEPSPEED_CONFIG)
 
 ### ---------------------------------------------------------------------------
 ### 其他高级配置 (Advanced)

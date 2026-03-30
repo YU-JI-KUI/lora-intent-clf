@@ -3,68 +3,155 @@
 
 说明：
   本模块使用 dataclass 定义所有配置项，与 YAML 配置文件中的参数一一对应。
-  参数名可能不同（Python 使用下划线风格），但语义完全一致。
+  机器特定参数（模型路径、输出目录等）从 machine.env 自动加载，
+  无需手动修改代码或 YAML 文件。
 
-对应关系表（Python config ↔ YAML config）：
+使用方式：
+  # 推荐：自动从 machine.env 加载机器特定参数
+  from config import load_project_config
+  cfg = load_project_config()
+
+  # 备选：使用代码默认值（不读取 machine.env）
+  from config import ProjectConfig
+  cfg = ProjectConfig()
+
+machine.env 中的参数对应关系：
+  MODEL_PATH       → cfg.model.model_name_or_path
+  OUTPUT_DIR       → cfg.training.output_dir  /  cfg.export.adapter_name_or_path
+  DATASET_DIR      → cfg.data.train_file / val_file / test_file 的目录部分
+  DEEPSPEED_CONFIG → cfg.training.deepspeed
+  EXPORT_DIR       → cfg.export.export_dir
+  NPROC_PER_NODE   → 仅 shell 脚本使用（torchrun），Python 层不使用
+
+YAML ↔ Python 对应关系表：
   ┌─────────────────────────────────┬─────────────────────────────────┐
   │ Python (TrainingConfig)         │ YAML (train_lora_sft.yaml)      │
   ├─────────────────────────────────┼─────────────────────────────────┤
   │ model_name_or_path              │ model_name_or_path              │
   │ template                        │ template                        │
-  │ finetuning_type                 │ finetuning_type                 │
-  │ lora_target                     │ lora_target                     │
-  │ lora_rank                       │ lora_rank                       │
-  │ lora_alpha                      │ lora_alpha                      │
-  │ lora_dropout                    │ lora_dropout                    │
   │ output_dir                      │ output_dir                      │
-  │ num_train_epochs                │ num_train_epochs                │
-  │ per_device_train_batch_size     │ per_device_train_batch_size     │
-  │ per_device_eval_batch_size      │ per_device_eval_batch_size      │
-  │ gradient_accumulation_steps     │ gradient_accumulation_steps     │
-  │ learning_rate                   │ learning_rate                   │
-  │ lr_scheduler_type               │ lr_scheduler_type               │
-  │ warmup_ratio                    │ warmup_ratio                    │
-  │ weight_decay                    │ weight_decay                    │
-  │ max_grad_norm                   │ max_grad_norm                   │
-  │ fp16                            │ fp16                            │
-  │ optim                           │ optim                           │
-  │ seed                            │ seed                            │
-  │ logging_steps                   │ logging_steps                   │
-  │ save_steps                      │ save_steps                      │
-  │ save_total_limit                │ save_total_limit                │
-  │ eval_strategy                   │ eval_strategy                   │
-  │ eval_steps                      │ eval_steps                      │
-  │ gradient_checkpointing          │ gradient_checkpointing          │
-  │ report_to                       │ report_to                       │
   │ deepspeed                       │ deepspeed                       │
-  │ cutoff_len (→ max_seq_length)   │ cutoff_len                      │
-  │ labels                          │ (在 instruction prompt 中定义)   │
+  │ ... (其余超参见 TrainingConfig) │ ...                             │
   └─────────────────────────────────┴─────────────────────────────────┘
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
+import os
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
+
+# =============================================================================
+# machine.env 加载器
+# =============================================================================
+
+def _load_machine_env() -> Dict[str, str]:
+    """
+    读取项目根目录的 machine.env 文件。
+    若 machine.env 不存在，回退到 machine.env.example。
+    返回 key=value 字典（仅纯字符串，不展开 shell 变量）。
+    """
+    # src/config.py → PROJECT_ROOT = src/ 的上级
+    project_root = Path(__file__).parent.parent
+
+    env_file = project_root / "machine.env"
+    if not env_file.exists():
+        env_file = project_root / "machine.env.example"
+
+    result: Dict[str, str] = {}
+    if not env_file.exists():
+        return result
+
+    with open(env_file, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            # 跳过空行和注释行
+            if not line or line.startswith("#"):
+                continue
+            # 跳过注释掉的可选参数（如 # OUTPUT_DIR=...）
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            # 跳过值为空的行
+            if key and value:
+                result[key] = value
+
+    return result
+
+
+def load_project_config() -> "ProjectConfig":
+    """
+    从 machine.env 加载机器特定参数，构建 ProjectConfig。
+
+    优先级：machine.env > machine.env.example > 代码默认值
+
+    推荐在所有 Python 入口脚本（train.py / export_model.py / evaluate.py）
+    中使用此函数，而非直接实例化 ProjectConfig()。
+    """
+    env = _load_machine_env()
+    project_root = Path(__file__).parent.parent
+
+    # ── 从 machine.env 读取，未设置时用 PROJECT_ROOT 派生默认值 ──────────────
+    model_path = env.get(
+        "MODEL_PATH",
+        "/workspace/Qwen3-8B",
+    )
+    output_dir = env.get(
+        "OUTPUT_DIR",
+        str(project_root / "saves" / "qwen3-8b" / "lora" / "sft"),
+    )
+    dataset_dir = env.get(
+        "DATASET_DIR",
+        str(project_root / "data"),
+    )
+    deepspeed = env.get(
+        "DEEPSPEED_CONFIG",
+        str(project_root / "configs" / "deepspeed" / "ds_z3_config.json"),
+    )
+    export_dir = env.get(
+        "EXPORT_DIR",
+        str(project_root / "models" / "qwen3-8b-intent-clf"),
+    )
+
+    return ProjectConfig(
+        model=ModelConfig(
+            model_name_or_path=model_path,
+        ),
+        data=DataConfig(
+            train_file=str(Path(dataset_dir) / "train.json"),
+            val_file=str(Path(dataset_dir) / "val.json"),
+            test_file=str(Path(dataset_dir) / "test.json"),
+        ),
+        training=TrainingConfig(
+            output_dir=output_dir,
+            deepspeed=deepspeed,
+        ),
+        export=ExportConfig(
+            export_dir=export_dir,
+        ),
+    )
+
+
+# =============================================================================
+# 配置 dataclass 定义
+# =============================================================================
 
 @dataclass
 class ModelConfig:
     """模型相关配置"""
 
-    # 模型名称或本地路径（HuggingFace Hub ID 或本地绝对路径）
     # 对应 YAML: model_name_or_path
-    # 当前使用 ANS 网盘挂载路径（只读），无需拷贝到工作目录
+    # 由 machine.env 的 MODEL_PATH 覆盖（通过 load_project_config()）
     model_name_or_path: str = "/workspace/Qwen3-8B"
 
-    # 对话模板，需要与模型匹配
     # 对应 YAML: template
-    # 可选项: qwen, llama3, chatglm4, baichuan2, default
     template: str = "qwen"
 
-    # 是否信任远程代码（部分模型需要）
     trust_remote_code: bool = True
 
 
@@ -72,32 +159,21 @@ class ModelConfig:
 class LoraConfig:
     """LoRA 相关配置"""
 
-    # 微调类型
     # 对应 YAML: finetuning_type
-    # 可选项: lora, freeze, full
     finetuning_type: str = "lora"
 
-    # LoRA 目标模块
     # 对应 YAML: lora_target
-    # 可选项: all, q_proj,v_proj, q_proj,k_proj,v_proj,o_proj
     lora_target: str = "all"
 
-    # LoRA 秩
     # 对应 YAML: lora_rank
-    # 可选项: 8, 16, 32, 64, 128
     lora_rank: int = 16
 
-    # LoRA 缩放因子（通常为 rank 的 1~2 倍）
-    # 对应 YAML: lora_alpha
+    # 对应 YAML: lora_alpha（通常为 rank 的 1~2 倍）
     lora_alpha: int = 32
 
-    # LoRA Dropout 比率
     # 对应 YAML: lora_dropout
-    # 可选项: 0.0, 0.05, 0.1, 0.2
     lora_dropout: float = 0.05
 
-    # 目标模块列表（更精细的控制）
-    # 如果设置了此项，将覆盖 lora_target
     target_modules: Optional[List[str]] = None
 
 
@@ -105,25 +181,19 @@ class LoraConfig:
 class DataConfig:
     """数据相关配置"""
 
-    # 训练数据文件路径（使用绝对路径）
+    # 以下三个路径由 load_project_config() 基于 machine.env 的 DATASET_DIR 派生
+    # 对应 YAML: dataset_dir（间接）
     train_file: str = "/workspace/lora-intent-clf/data/train.json"
-
-    # 验证数据文件路径（使用绝对路径）
     val_file: str = "/workspace/lora-intent-clf/data/val.json"
-
-    # 测试数据文件路径（使用绝对路径）
     test_file: str = "/workspace/lora-intent-clf/data/test.json"
 
-    # 最大序列长度
     # 对应 YAML: cutoff_len
-    # 可选项: 256, 512, 1024, 2048
     max_seq_length: int = 512
 
-    # 数据预处理线程数
     # 对应 YAML: preprocessing_num_workers
     preprocessing_num_workers: int = 16
 
-    # 系统提示词（instruction 部分）
+    # 系统提示词模板（{labels} 占位符由 get_instruction() 替换）
     system_prompt: str = (
         "你是一个意图识别助手。请根据用户输入的文本，判断其意图类别。"
         "只能输出以下标签之一：{labels}。"
@@ -136,104 +206,39 @@ class DataConfig:
 
     def get_instruction(self) -> str:
         """生成完整的 instruction 文本"""
-        return self.system_prompt.format(
-            labels="、".join(self.labels)
-        )
+        return self.system_prompt.format(labels="、".join(self.labels))
 
 
 @dataclass
 class TrainingConfig:
     """训练超参数配置"""
 
-    # 输出目录（使用绝对路径）
     # 对应 YAML: output_dir
+    # 由 machine.env 的 OUTPUT_DIR 覆盖（通过 load_project_config()）
     output_dir: str = "/workspace/lora-intent-clf/saves/qwen3-8b/lora/sft"
 
-    # 训练轮数
-    # 对应 YAML: num_train_epochs
     num_train_epochs: float = 5.0
-
-    # 每设备训练批次大小
-    # 对应 YAML: per_device_train_batch_size
     per_device_train_batch_size: int = 2
-
-    # 每设备评估批次大小
-    # 对应 YAML: per_device_eval_batch_size
     per_device_eval_batch_size: int = 4
-
-    # 梯度累积步数
-    # 对应 YAML: gradient_accumulation_steps
     gradient_accumulation_steps: int = 4
-
-    # 学习率
-    # 对应 YAML: learning_rate
     learning_rate: float = 1e-4
-
-    # 学习率调度器类型
-    # 对应 YAML: lr_scheduler_type
-    # 可选项: linear, cosine, cosine_with_restarts, polynomial, constant
     lr_scheduler_type: str = "cosine"
-
-    # 预热比例
-    # 对应 YAML: warmup_ratio
     warmup_ratio: float = 0.1
-
-    # 权重衰减
-    # 对应 YAML: weight_decay
     weight_decay: float = 0.01
-
-    # 最大梯度范数（梯度裁剪）
-    # 对应 YAML: max_grad_norm
     max_grad_norm: float = 1.0
-
-    # 使用 FP16 混合精度（V100 不支持 BF16）
-    # 对应 YAML: fp16
     fp16: bool = True
-
-    # 优化器
-    # 对应 YAML: optim
-    # 可选项: adamw_torch, adamw_hf, adafactor, sgd
     optim: str = "adamw_torch"
-
-    # 随机种子
-    # 对应 YAML: seed
     seed: int = 42
-
-    # 日志记录间隔（步数）
-    # 对应 YAML: logging_steps
     logging_steps: int = 10
-
-    # 模型保存间隔（步数）
-    # 对应 YAML: save_steps
     save_steps: int = 500
-
-    # 最大 checkpoint 保留数量
-    # 对应 YAML: save_total_limit
     save_total_limit: int = 3
-
-    # 评估策略
-    # 对应 YAML: eval_strategy
-    # 可选项: steps, epoch, no
     eval_strategy: str = "steps"
-
-    # 评估间隔（步数）
-    # 对应 YAML: eval_steps
     eval_steps: int = 500
-
-    # 梯度检查点（用计算换显存）
-    # 对应 YAML: gradient_checkpointing
     gradient_checkpointing: bool = True
-
-    # 日志输出目标
-    # 对应 YAML: report_to
-    # 可选项: tensorboard, wandb, mlflow, none
     report_to: str = "tensorboard"
 
-    # DeepSpeed 配置文件路径（可选，用于多卡分布式训练）
     # 对应 YAML: deepspeed
-    # 用法：需配合 torchrun 启动，不能用 python 直接运行
-    #   torchrun --nproc_per_node=4 src/train.py --deepspeed configs/deepspeed/ds_z3_config.json
-    # None 表示不使用 DeepSpeed（单卡或普通 DDP）
+    # 由 machine.env 的 DEEPSPEED_CONFIG 覆盖（通过 load_project_config()）
     deepspeed: Optional[str] = "/workspace/lora-intent-clf/configs/deepspeed/ds_z3_config.json"
 
 
@@ -241,16 +246,11 @@ class TrainingConfig:
 class ExportConfig:
     """模型导出配置"""
 
-    # 导出目录（使用绝对路径）
     # 对应 YAML: export_dir
+    # 由 machine.env 的 EXPORT_DIR 覆盖（通过 load_project_config()）
     export_dir: str = "/workspace/lora-intent-clf/models/qwen3-8b-intent-clf"
 
-    # 导出分片大小 (GB)
-    # 对应 YAML: export_size
     export_size: int = 2
-
-    # 导出设备
-    # 对应 YAML: export_device
     export_device: str = "cpu"
 
 
@@ -258,19 +258,10 @@ class ExportConfig:
 class InferenceConfig:
     """推理配置"""
 
-    # 温度
     temperature: float = 0.01
-
-    # Top-p 采样
     top_p: float = 0.1
-
-    # Top-k 采样
     top_k: int = 1
-
-    # 最大生成 token 数
     max_new_tokens: int = 16
-
-    # 重复惩罚
     repetition_penalty: float = 1.0
 
 
@@ -286,18 +277,15 @@ class ProjectConfig:
     inference: InferenceConfig = field(default_factory=InferenceConfig)
 
     def to_dict(self) -> dict:
-        """转换为嵌套字典"""
         return asdict(self)
 
     def save(self, path: str) -> None:
-        """保存配置到 JSON 文件"""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
 
     @classmethod
     def load(cls, path: str) -> "ProjectConfig":
-        """从 JSON 文件加载配置"""
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return cls(

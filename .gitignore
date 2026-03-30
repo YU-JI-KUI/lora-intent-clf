@@ -39,3 +39,6 @@ Thumbs.db
 
 # Datasets cache
 .cache/
+
+# 机器特定配置（每台机器独立维护，不提交仓库）
+machine.env

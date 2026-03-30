@@ -12,7 +12,7 @@
 # 含义：指向 export_lora.yaml 导出的合并模型目录
 # 理由：合并模型已包含 LoRA 权重，无需额外加载适配器，推理速度更快
 # 注意：如果使用合并模型，不需要设置 adapter_name_or_path 和 finetuning_type
-model_name_or_path: /workspace/lora-intent-clf/models/qwen3-8b-intent-clf
+model_name_or_path: /workspace/lora-intent-clf/models/qwen3-8b-intent-clf  # ⚠️ 由 machine.env 覆盖 (EXPORT_DIR → 合并模型)
 
 # 对话模板
 # 含义：与训练时使用的模板 完全一致
