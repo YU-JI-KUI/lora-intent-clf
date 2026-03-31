@@ -29,13 +29,13 @@ dev = [
 ]
 
 [tool.uv]
-# 优先使用公司内部 Nexus 仓库，PyPI 作为回退
-index-url = "http://nexus.pajk-ent.com/repository/pypi-all/simple"
+# 优先使用公司内部 Maven 仓库，PyPI 作为回退
+index-url = "http://maven.paic.com.cn/repository/pypi/simple"
 # 允许 http（内网仓库）
-allow-insecure-host = ["nexus.pajk-ent.com"]
+allow-insecure-host = ["maven.paic.com.cn"]
 
 [tool.uv.pip]
-index-url = "http://nexus.pajk-ent.com/repository/pypi-all/simple"
+index-url = "http://maven.paic.com.cn/repository/pypi/simple"
 
 [tool.ruff]
 target-version = "py310"

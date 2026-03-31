@@ -15,7 +15,7 @@
 #   bash scripts/setup_env.sh --dev --llamafactory
 #
 # 注意：
-#   - 内网仓库地址：http://nexus.pajk-ent.com/repository/pypi-all/simple
+#   - 内网仓库地址：http://maven.paic.com.cn/repository/pypi/simple
 #   - 脚本幂等，重复执行安全
 # =============================================================================
 set -euo pipefail
@@ -23,7 +23,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VENV_DIR="${PROJECT_DIR}/.venv"
-NEXUS_URL="http://nexus.pajk-ent.com/repository/pypi-all/simple"
+NEXUS_URL="http://maven.paic.com.cn/repository/pypi/simple"
 
 # ─── 参数解析 ─────────────────────────────────────────────────────────────────
 INSTALL_DEV=false
@@ -55,7 +55,7 @@ if ! command -v uv &>/dev/null; then
         export PATH="${HOME}/.local/bin:${PATH}"
         info "uv 安装成功（官方脚本）"
     # 方式 B：通过内部 pip 安装
-    elif pip install uv --index-url "${NEXUS_URL}" --trusted-host nexus.pajk-ent.com 2>/dev/null; then
+    elif pip install uv --index-url "${NEXUS_URL}" --trusted-host maven.paic.com.cn 2>/dev/null; then
         info "uv 安装成功（内部 Nexus）"
     else
         error "uv 安装失败，请手动安装后重试"
@@ -83,12 +83,12 @@ info "安装生产依赖（来源：Nexus 内部仓库）..."
 uv pip install \
     --python "${VENV_DIR}/bin/python" \
     --index-url "${NEXUS_URL}" \
-    --trusted-host nexus.pajk-ent.com \
+    --trusted-host maven.paic.com.cn \
     -e ".[dev]" 2>/dev/null || \
 uv pip install \
     --python "${VENV_DIR}/bin/python" \
     --index-url "${NEXUS_URL}" \
-    --trusted-host nexus.pajk-ent.com \
+    --trusted-host maven.paic.com.cn \
     -r requirements.txt
 
 if [[ "${INSTALL_DEV}" == "true" ]]; then
@@ -96,7 +96,7 @@ if [[ "${INSTALL_DEV}" == "true" ]]; then
     uv pip install \
         --python "${VENV_DIR}/bin/python" \
         --index-url "${NEXUS_URL}" \
-        --trusted-host nexus.pajk-ent.com \
+        --trusted-host maven.paic.com.cn \
         ruff==0.13.2 pytest==7.4.1
 fi
 
@@ -108,7 +108,7 @@ if [[ "${INSTALL_LLAMAFACTORY}" == "true" ]]; then
         uv pip install \
             --python "${VENV_DIR}/bin/python" \
             --index-url "${NEXUS_URL}" \
-            --trusted-host nexus.pajk-ent.com \
+            --trusted-host maven.paic.com.cn \
             -e /workspace/LLaMA-Factory
     else
         warn "未找到 /workspace/LLaMA-Factory，跳过 LlamaFactory 安装"

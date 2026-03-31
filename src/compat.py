@@ -17,7 +17,6 @@ numpy 兼容性垫片（compat shim）
 
 注意：
   这是临时绕过方案。根本修复是升级使用废弃 API 的那个包。
-  运行 python scripts/diagnose_env.py 可定位具体来源。
 """
 
 import numpy as np

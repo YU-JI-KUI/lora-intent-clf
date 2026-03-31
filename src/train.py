@@ -59,6 +59,71 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# DeepSpeed 工具
+# =============================================================================
+
+
+def _resolve_ds_auto_values(ds_dict: dict, cfg: "ProjectConfig") -> dict:
+    """
+    将 DeepSpeed 配置中的 'auto' 占位符替换为实际计算值。
+
+    根本原因：
+      ds_z3_offload_config.json 中使用 "auto" 作为占位符，设计上由
+      HuggingFace Trainer 的 trainer_config_process() 在训练时替换。
+      但在 from_pretrained 之前手动创建 HfDeepSpeedConfig(_ds_dict) 时，
+      某些版本的 DeepSpeed (>=0.14) 会在 DeepSpeedConfig.__init__ 中调用
+      _batch_assertion()，此时 "auto" 尚未被替换，导致：
+        TypeError: '>' not supported between instances of 'str' and 'int'
+        (assert train_batch_size > 0)
+
+    修复：提前将 "auto" 替换为基于 machine.env 参数的实际值，再创建
+    HfDeepSpeedConfig。Trainer 自己创建的那份 HfDeepSpeedConfig（从路径加载）
+    走标准的 trainer_config_process() 路径，不受影响。
+    """
+    import copy
+
+    ds = copy.deepcopy(ds_dict)
+
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    per_device_bs = int(cfg.training.per_device_train_batch_size)
+    grad_accum = int(cfg.training.gradient_accumulation_steps)
+    global_bs = world_size * per_device_bs * grad_accum
+
+    if ds.get("train_batch_size") == "auto":
+        ds["train_batch_size"] = global_bs
+    if ds.get("train_micro_batch_size_per_gpu") == "auto":
+        ds["train_micro_batch_size_per_gpu"] = per_device_bs
+    if ds.get("gradient_accumulation_steps") == "auto":
+        ds["gradient_accumulation_steps"] = grad_accum
+    if ds.get("gradient_clipping") == "auto":
+        ds["gradient_clipping"] = float(cfg.training.max_grad_norm)
+
+    fp16 = ds.get("fp16", {})
+    if fp16.get("enabled") == "auto":
+        fp16["enabled"] = bool(cfg.training.fp16)
+
+    bf16 = ds.get("bf16", {})
+    if bf16.get("enabled") == "auto":
+        bf16["enabled"] = not bool(cfg.training.fp16)
+
+    # zero_optimization 中的 "auto" — 用保守的大值作为上界默认值
+    zero = ds.get("zero_optimization", {})
+    if zero.get("reduce_bucket_size") == "auto":
+        zero["reduce_bucket_size"] = int(5e8)
+    if zero.get("stage3_prefetch_bucket_size") == "auto":
+        zero["stage3_prefetch_bucket_size"] = int(4.5e8)
+    if zero.get("stage3_param_persistence_threshold") == "auto":
+        zero["stage3_param_persistence_threshold"] = int(1e6)
+
+    logger.info(
+        f"DeepSpeed 配置已解析（'auto' 已替换）："
+        f" global_bs={global_bs}  per_device_bs={per_device_bs}"
+        f"  grad_accum={grad_accum}  fp16={bool(cfg.training.fp16)}"
+    )
+    return ds
+
+
+# =============================================================================
 # GPU 诊断工具
 # =============================================================================
 
@@ -324,7 +389,10 @@ def train(cfg: ProjectConfig) -> None:
             with open(_ds_path, encoding="utf-8") as _f:
                 _ds_dict = json.load(_f)
             if _ds_dict.get("zero_optimization", {}).get("stage") == 3:
-                _dschf = HfDeepSpeedConfig(_ds_dict)
+                # 替换 "auto" 值，防止 DeepSpeed _batch_assertion() 在 __init__ 中
+                # 因 "auto" > 0 比较触发 TypeError（见 _resolve_ds_auto_values 注释）
+                _ds_resolved = _resolve_ds_auto_values(_ds_dict, cfg)
+                _dschf = HfDeepSpeedConfig(_ds_resolved)
                 logger.info("ZeRO-3: HfDeepSpeedConfig 已激活，from_pretrained 将自动分片参数")
         else:
             logger.warning(f"DeepSpeed 配置文件不存在: {_ds_path}，将不使用 DeepSpeed")
@@ -344,34 +412,36 @@ def train(cfg: ProjectConfig) -> None:
     # 构建 TrainingArguments（与 YAML 参数一一对应，均可通过 machine.env 覆盖）
     # ⚠️ save_strategy 必须与 eval_strategy 一致，且 save_steps == eval_steps，
     #    否则 load_best_model_at_end=True 和 EarlyStoppingCallback 会报错。
+    # 注：显式 int()/float()/bool() 转换为防御性编程，确保运行时类型正确
+    #     （dataclass 字段类型注解在 Python 中仅作文档用途，不做强制校验）。
     training_args = TrainingArguments(
-        output_dir=cfg.training.output_dir,
-        num_train_epochs=cfg.training.num_train_epochs,
-        per_device_train_batch_size=cfg.training.per_device_train_batch_size,
-        per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
-        gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
-        learning_rate=cfg.training.learning_rate,
-        lr_scheduler_type=cfg.training.lr_scheduler_type,
-        warmup_ratio=cfg.training.warmup_ratio,
-        weight_decay=cfg.training.weight_decay,
-        max_grad_norm=cfg.training.max_grad_norm,
-        fp16=cfg.training.fp16,
-        optim=cfg.training.optim,
-        seed=cfg.training.seed,
-        logging_steps=cfg.training.logging_steps,
+        output_dir=str(cfg.training.output_dir),
+        num_train_epochs=float(cfg.training.num_train_epochs),
+        per_device_train_batch_size=int(cfg.training.per_device_train_batch_size),
+        per_device_eval_batch_size=int(cfg.training.per_device_eval_batch_size),
+        gradient_accumulation_steps=int(cfg.training.gradient_accumulation_steps),
+        learning_rate=float(cfg.training.learning_rate),
+        lr_scheduler_type=str(cfg.training.lr_scheduler_type),
+        warmup_ratio=float(cfg.training.warmup_ratio),
+        weight_decay=float(cfg.training.weight_decay),
+        max_grad_norm=float(cfg.training.max_grad_norm),
+        fp16=bool(cfg.training.fp16),
+        optim=str(cfg.training.optim),
+        seed=int(cfg.training.seed),
+        logging_steps=int(cfg.training.logging_steps),
         # save_strategy / eval_strategy 必须一致，save_steps 必须等于 eval_steps
-        save_strategy=cfg.training.eval_strategy,
-        save_steps=cfg.training.save_steps,
-        save_total_limit=cfg.training.save_total_limit,
-        eval_strategy=cfg.training.eval_strategy,
-        eval_steps=cfg.training.eval_steps,
+        save_strategy=str(cfg.training.eval_strategy),
+        save_steps=int(cfg.training.save_steps),
+        save_total_limit=int(cfg.training.save_total_limit),
+        eval_strategy=str(cfg.training.eval_strategy),
+        eval_steps=int(cfg.training.eval_steps),
         # 早停必须：训练结束后自动加载最优 checkpoint（eval_loss 最低）
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         greater_is_better=False,
-        gradient_checkpointing=cfg.training.gradient_checkpointing,
-        report_to=cfg.training.report_to,
-        logging_dir=os.path.join(cfg.training.output_dir, "logs"),
+        gradient_checkpointing=bool(cfg.training.gradient_checkpointing),
+        report_to=str(cfg.training.report_to),
+        logging_dir=os.path.join(str(cfg.training.output_dir), "logs"),
         overwrite_output_dir=True,
         remove_unused_columns=False,
         ddp_timeout=180000000,
@@ -386,8 +456,8 @@ def train(cfg: ProjectConfig) -> None:
 
     # 早停 callback：连续 patience 次评估 eval_loss 无改善则停止，并恢复最优 checkpoint
     early_stopping_cb = EarlyStoppingCallback(
-        early_stopping_patience=cfg.training.early_stopping_patience,
-        early_stopping_threshold=cfg.training.early_stopping_threshold,
+        early_stopping_patience=int(cfg.training.early_stopping_patience),
+        early_stopping_threshold=float(cfg.training.early_stopping_threshold),
     )
     logger.info(
         f"早停已启用：patience={cfg.training.early_stopping_patience} 次评估 "
