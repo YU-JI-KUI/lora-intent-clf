@@ -58,6 +58,62 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# GPU 诊断工具
+# =============================================================================
+
+def _gpu_memory_summary(tag: str = "") -> None:
+    """
+    打印当前所有 GPU 的显存使用情况，用于 OOM 问题排查。
+    仅在 rank=0 进程打印（避免多进程重复输出）。
+    """
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    if local_rank != 0:
+        return
+    if not torch.cuda.is_available():
+        logger.info(f"[GPU-MEM {tag}] CUDA 不可用")
+        return
+
+    sep = "─" * 62
+    logger.info(sep)
+    logger.info(f"[GPU-MEM] {tag}")
+    for i in range(torch.cuda.device_count()):
+        alloc  = torch.cuda.memory_allocated(i)  / 1024 ** 3
+        reserv = torch.cuda.memory_reserved(i)   / 1024 ** 3
+        total  = torch.cuda.get_device_properties(i).total_memory / 1024 ** 3
+        logger.info(
+            f"  GPU {i}: allocated={alloc:.2f}GB  reserved={reserv:.2f}GB  total={total:.1f}GB"
+        )
+    logger.info(sep)
+
+
+def _print_config(cfg) -> None:
+    """打印已解析的全量配置，rank=0 进程打印"""
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    if local_rank != 0:
+        return
+    sep = "═" * 62
+    logger.info(sep)
+    logger.info("[CONFIG] 当前训练配置（来自 machine.env + 代码默认值）")
+    logger.info(sep)
+    logger.info(f"  model_name_or_path  = {cfg.model.model_name_or_path}")
+    logger.info(f"  output_dir          = {cfg.training.output_dir}")
+    logger.info(f"  dataset_dir (train) = {cfg.data.train_file}")
+    logger.info(f"  deepspeed           = {cfg.training.deepspeed}")
+    logger.info(f"  deepspeed_exists    = {Path(cfg.training.deepspeed).exists() if cfg.training.deepspeed else False}")
+    logger.info(f"  export_dir          = {cfg.export.export_dir}")
+    logger.info(f"  lora_rank           = {cfg.lora.lora_rank}")
+    logger.info(f"  lora_alpha          = {cfg.lora.lora_alpha}")
+    logger.info(f"  lora_target         = {cfg.lora.lora_target}")
+    logger.info(f"  fp16                = {cfg.training.fp16}")
+    logger.info(f"  per_device_bs       = {cfg.training.per_device_train_batch_size}")
+    logger.info(f"  grad_accum_steps    = {cfg.training.gradient_accumulation_steps}")
+    logger.info(f"  gradient_ckpt       = {cfg.training.gradient_checkpointing}")
+    logger.info(f"  num_train_epochs    = {cfg.training.num_train_epochs}")
+    logger.info(f"  GPU 数量 (LOCAL/ENV) = {torch.cuda.device_count()} / WORLD_SIZE={os.environ.get('WORLD_SIZE', '?')}")
+    logger.info(sep)
+
+
+# =============================================================================
 # 数据加载与预处理
 # =============================================================================
 
@@ -211,6 +267,14 @@ def build_model_and_tokenizer(cfg: ProjectConfig):
         bias="none",
     )
 
+    # gradient checkpointing 要求禁用 KV cache（否则报 Warning 且梯度错误）
+    model.config.use_cache = False
+
+    # PEFT + gradient checkpointing：确保 input embedding 产生梯度
+    # 若不设置，部分模型（如 Qwen3）的 embedding 层梯度会被截断，
+    # 导致靠近 embedding 的 LoRA adapter 实际未被训练
+    model.enable_input_require_grads()
+
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 
@@ -228,7 +292,37 @@ def train(cfg: ProjectConfig) -> None:
 
     所有参数与 YAML 配置一一对应，见 config.py 中的对应关系表
     """
+    # ── ZeRO-3 关键初始化（必须在 from_pretrained 之前）────────────────────────
+    # 背景：
+    #   若不在 from_pretrained 之前创建 HfDeepSpeedConfig，每个 torchrun 进程
+    #   会各自将完整模型（Qwen3-8B FP16 ≈ 16GB）加载到 CPU RAM，
+    #   N 卡训练需要 N×16GB CPU RAM，且 ZeRO-3 参数分片是训练开始后才执行。
+    #
+    # 修复方案：
+    #   HfDeepSpeedConfig 会激活 deepspeed.zero.Init() 上下文，
+    #   使 from_pretrained 在加载时即将参数分片，每个进程仅持有 1/N 的参数。
+    #
+    # 注意：_dschf 必须保持强引用直到 trainer.train() 结束，
+    #       HuggingFace 内部用 weakref 持有该对象，GC 回收后配置失效。
+    # 打印全量配置（rank=0），方便确认参数是否正确加载
+    _print_config(cfg)
+    _gpu_memory_summary("训练开始前")
+
+    _dschf = None  # noqa: SIM assignment — must not be reassigned or deleted
+    if cfg.training.deepspeed:
+        _ds_path = Path(cfg.training.deepspeed)
+        if _ds_path.exists():
+            from transformers.integrations import HfDeepSpeedConfig
+            with open(_ds_path, encoding="utf-8") as _f:
+                _ds_dict = json.load(_f)
+            if _ds_dict.get("zero_optimization", {}).get("stage") == 3:
+                _dschf = HfDeepSpeedConfig(_ds_dict)
+                logger.info("ZeRO-3: HfDeepSpeedConfig 已激活，from_pretrained 将自动分片参数")
+        else:
+            logger.warning(f"DeepSpeed 配置文件不存在: {_ds_path}，将不使用 DeepSpeed")
+
     model, tokenizer = build_model_and_tokenizer(cfg)
+    _gpu_memory_summary("模型+PEFT加载后")
 
     # 加载数据
     train_data_raw = load_jsonl_data(cfg.data.train_file)
@@ -288,6 +382,7 @@ def train(cfg: ProjectConfig) -> None:
         data_collator=data_collator,
     )
 
+    _gpu_memory_summary("Trainer 初始化后、训练前")
     logger.info("开始训练...")
     trainer.train()
 

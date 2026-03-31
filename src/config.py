@@ -111,7 +111,10 @@ def load_project_config() -> "ProjectConfig":
     )
     deepspeed = env.get(
         "DEEPSPEED_CONFIG",
-        str(project_root / "configs" / "deepspeed" / "ds_z3_config.json"),
+        # 默认使用 CPU offload 版本，确保在显存紧张的 V100 16GB 环境下可用。
+        # 若目标机器显存充足（A100 40GB+），可在 machine.env 中改为
+        # ds_z3_config.json（无 offload，速度更快）。
+        str(project_root / "configs" / "deepspeed" / "ds_z3_offload_config.json"),
     )
     export_dir = env.get(
         "EXPORT_DIR",
@@ -239,7 +242,8 @@ class TrainingConfig:
 
     # 对应 YAML: deepspeed
     # 由 machine.env 的 DEEPSPEED_CONFIG 覆盖（通过 load_project_config()）
-    deepspeed: Optional[str] = "/workspace/lora-intent-clf/configs/deepspeed/ds_z3_config.json"
+    # 默认 offload 版本：兼容 V100 16GB；A100 40GB+ 可改为 ds_z3_config.json
+    deepspeed: Optional[str] = "/workspace/lora-intent-clf/configs/deepspeed/ds_z3_offload_config.json"
 
 
 @dataclass

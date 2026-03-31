@@ -1,4 +1,5 @@
 {
+  "_comment": "ZeRO-3 + CPU Offload — 针对 V100 16GB 优化。offload_param + offload_optimizer 将 fp32 主权重和 Adam 状态卸载到 CPU RAM，GPU 仅保留当前层的激活参数（约 2-4GB），彻底解决 8B 模型在 16GB GPU 上的 OOM 问题。",
   "train_batch_size": "auto",
   "train_micro_batch_size_per_gpu": "auto",
   "gradient_accumulation_steps": "auto",
@@ -19,12 +20,12 @@
     "stage": 3,
     "overlap_comm": false,
     "contiguous_gradients": true,
-    "sub_group_size": 1e9,
+    "sub_group_size": 1e8,
     "reduce_bucket_size": "auto",
     "stage3_prefetch_bucket_size": "auto",
     "stage3_param_persistence_threshold": "auto",
-    "stage3_max_live_parameters": 1e9,
-    "stage3_max_reuse_distance": 1e9,
+    "stage3_max_live_parameters": 2e8,
+    "stage3_max_reuse_distance": 2e8,
     "stage3_gather_16bit_weights_on_model_save": true,
     "offload_param": {
       "device": "cpu",

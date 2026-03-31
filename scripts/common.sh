@@ -64,7 +64,7 @@ fi
 # ─── 4. 可选参数默认值（从 PROJECT_ROOT 派生）────────────────────────────────
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/saves/qwen3-8b/lora/sft}"
 DATASET_DIR="${DATASET_DIR:-${PROJECT_ROOT}/data}"
-DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-${PROJECT_ROOT}/configs/deepspeed/ds_z3_config.json}"
+DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-${PROJECT_ROOT}/configs/deepspeed/ds_z3_offload_config.json}"
 EXPORT_DIR="${EXPORT_DIR:-${PROJECT_ROOT}/models/qwen3-8b-intent-clf}"
 
 # 预测输出目录：与 OUTPUT_DIR 同级的 predict/ 子目录
@@ -84,3 +84,29 @@ fi
 # ─── 6. 统一导出 ──────────────────────────────────────────────────────────────
 export PROJECT_ROOT MODEL_PATH OUTPUT_DIR DATASET_DIR DEEPSPEED_CONFIG \
        EXPORT_DIR PREDICT_OUTPUT_DIR NPROC_PER_NODE PYTHON TORCHRUN
+
+# ─── 7. 启动时打印所有已解析参数（方便排查配置是否生效）────────────────────
+_CYAN='\033[0;36m'; _GREEN='\033[0;32m'; _YELLOW='\033[1;33m'; _NC='\033[0m'
+echo -e "${_CYAN}══════════════════════════════════════════════════════${_NC}"
+echo -e "${_CYAN}  [CONFIG] 已加载的机器配置（来源: ${_ENV_FILE:-${_ENV_EXAMPLE}}）${_NC}"
+echo -e "${_CYAN}══════════════════════════════════════════════════════${_NC}"
+echo -e "  ${_GREEN}PROJECT_ROOT      ${_NC}= ${PROJECT_ROOT}"
+echo -e "  ${_GREEN}MODEL_PATH        ${_NC}= ${MODEL_PATH}"
+echo -e "  ${_GREEN}OUTPUT_DIR        ${_NC}= ${OUTPUT_DIR}"
+echo -e "  ${_GREEN}DATASET_DIR       ${_NC}= ${DATASET_DIR}"
+echo -e "  ${_GREEN}DEEPSPEED_CONFIG  ${_NC}= ${DEEPSPEED_CONFIG}"
+echo -e "  ${_GREEN}EXPORT_DIR        ${_NC}= ${EXPORT_DIR}"
+echo -e "  ${_GREEN}PREDICT_OUTPUT_DIR${_NC}= ${PREDICT_OUTPUT_DIR}"
+echo -e "  ${_GREEN}NPROC_PER_NODE    ${_NC}= ${NPROC_PER_NODE}"
+echo -e "  ${_GREEN}PYTHON            ${_NC}= ${PYTHON}"
+echo -e "  ${_GREEN}TORCHRUN          ${_NC}= ${TORCHRUN}"
+
+# 校验关键文件是否存在
+_warn_missing() {
+    [[ -e "$2" ]] || echo -e "  ${_YELLOW}[WARN] ${1} 路径不存在: $2${_NC}"
+}
+_warn_missing "MODEL_PATH"       "${MODEL_PATH}"
+_warn_missing "DEEPSPEED_CONFIG" "${DEEPSPEED_CONFIG}"
+_warn_missing "DATASET_DIR"      "${DATASET_DIR}"
+
+echo -e "${_CYAN}══════════════════════════════════════════════════════${_NC}"
