@@ -44,6 +44,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     DataCollatorForSeq2Seq,
+    EarlyStoppingCallback,
     Trainer,
     TrainingArguments,
 )
@@ -103,12 +104,19 @@ def _print_config(cfg) -> None:
     logger.info(f"  export_dir          = {cfg.export.export_dir}")
     logger.info(f"  lora_rank           = {cfg.lora.lora_rank}")
     logger.info(f"  lora_alpha          = {cfg.lora.lora_alpha}")
+    logger.info(f"  lora_dropout        = {cfg.lora.lora_dropout}")
     logger.info(f"  lora_target         = {cfg.lora.lora_target}")
     logger.info(f"  fp16                = {cfg.training.fp16}")
+    logger.info(f"  cutoff_len          = {cfg.data.max_seq_length}")
     logger.info(f"  per_device_bs       = {cfg.training.per_device_train_batch_size}")
     logger.info(f"  grad_accum_steps    = {cfg.training.gradient_accumulation_steps}")
-    logger.info(f"  gradient_ckpt       = {cfg.training.gradient_checkpointing}")
+    logger.info(f"  learning_rate       = {cfg.training.learning_rate}")
     logger.info(f"  num_train_epochs    = {cfg.training.num_train_epochs}")
+    logger.info(f"  warmup_ratio        = {cfg.training.warmup_ratio}")
+    logger.info(f"  eval_steps          = {cfg.training.eval_steps}")
+    logger.info(f"  save_steps          = {cfg.training.save_steps}")
+    logger.info(f"  early_stopping_patience   = {cfg.training.early_stopping_patience}")
+    logger.info(f"  early_stopping_threshold  = {cfg.training.early_stopping_threshold}")
     logger.info(f"  GPU 数量 (LOCAL/ENV) = {torch.cuda.device_count()} / WORLD_SIZE={os.environ.get('WORLD_SIZE', '?')}")
     logger.info(sep)
 
@@ -333,38 +341,40 @@ def train(cfg: ProjectConfig) -> None:
 
     logger.info(f"训练集: {len(train_dataset)} 条，验证集: {len(val_dataset)} 条")
 
-    # 构建 TrainingArguments（与 YAML 参数一一对应）
+    # 构建 TrainingArguments（与 YAML 参数一一对应，均可通过 machine.env 覆盖）
+    # ⚠️ save_strategy 必须与 eval_strategy 一致，且 save_steps == eval_steps，
+    #    否则 load_best_model_at_end=True 和 EarlyStoppingCallback 会报错。
     training_args = TrainingArguments(
-        output_dir=cfg.training.output_dir,                               # YAML: output_dir
-        num_train_epochs=cfg.training.num_train_epochs,                   # YAML: num_train_epochs
-        per_device_train_batch_size=cfg.training.per_device_train_batch_size,  # YAML: per_device_train_batch_size
-        per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,    # YAML: per_device_eval_batch_size
-        gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,  # YAML: gradient_accumulation_steps
-        learning_rate=cfg.training.learning_rate,                         # YAML: learning_rate
-        lr_scheduler_type=cfg.training.lr_scheduler_type,                 # YAML: lr_scheduler_type
-        warmup_ratio=cfg.training.warmup_ratio,                           # YAML: warmup_ratio
-        weight_decay=cfg.training.weight_decay,                           # YAML: weight_decay
-        max_grad_norm=cfg.training.max_grad_norm,                         # YAML: max_grad_norm
-        fp16=cfg.training.fp16,                                           # YAML: fp16
-        optim=cfg.training.optim,                                         # YAML: optim
-        seed=cfg.training.seed,                                           # YAML: seed
-        logging_steps=cfg.training.logging_steps,                         # YAML: logging_steps
-        save_steps=cfg.training.save_steps,                               # YAML: save_steps
-        save_total_limit=cfg.training.save_total_limit,                   # YAML: save_total_limit
-        eval_strategy=cfg.training.eval_strategy,                         # YAML: eval_strategy
-        eval_steps=cfg.training.eval_steps,                               # YAML: eval_steps
-        gradient_checkpointing=cfg.training.gradient_checkpointing,       # YAML: gradient_checkpointing
-        report_to=cfg.training.report_to,                                 # YAML: report_to
-        logging_dir=os.path.join(cfg.training.output_dir, "logs"),
-        overwrite_output_dir=True,
-        remove_unused_columns=False,
-        ddp_timeout=180000000,                                            # YAML: ddp_timeout
+        output_dir=cfg.training.output_dir,
+        num_train_epochs=cfg.training.num_train_epochs,
+        per_device_train_batch_size=cfg.training.per_device_train_batch_size,
+        per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
+        gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
+        learning_rate=cfg.training.learning_rate,
+        lr_scheduler_type=cfg.training.lr_scheduler_type,
+        warmup_ratio=cfg.training.warmup_ratio,
+        weight_decay=cfg.training.weight_decay,
+        max_grad_norm=cfg.training.max_grad_norm,
+        fp16=cfg.training.fp16,
+        optim=cfg.training.optim,
+        seed=cfg.training.seed,
+        logging_steps=cfg.training.logging_steps,
+        # save_strategy / eval_strategy 必须一致，save_steps 必须等于 eval_steps
+        save_strategy=cfg.training.eval_strategy,
+        save_steps=cfg.training.save_steps,
+        save_total_limit=cfg.training.save_total_limit,
+        eval_strategy=cfg.training.eval_strategy,
+        eval_steps=cfg.training.eval_steps,
+        # 早停必须：训练结束后自动加载最优 checkpoint（eval_loss 最低）
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         greater_is_better=False,
-        # DeepSpeed ZeRO-3 配置（解决多卡 OOM）
-        # 需配合 torchrun --nproc_per_node=N 启动，否则 DeepSpeed 不生效
-        # YAML: deepspeed
+        gradient_checkpointing=cfg.training.gradient_checkpointing,
+        report_to=cfg.training.report_to,
+        logging_dir=os.path.join(cfg.training.output_dir, "logs"),
+        overwrite_output_dir=True,
+        remove_unused_columns=False,
+        ddp_timeout=180000000,
         deepspeed=cfg.training.deepspeed,
     )
 
@@ -374,12 +384,24 @@ def train(cfg: ProjectConfig) -> None:
         return_tensors="pt",
     )
 
+    # 早停 callback：连续 patience 次评估 eval_loss 无改善则停止，并恢复最优 checkpoint
+    early_stopping_cb = EarlyStoppingCallback(
+        early_stopping_patience=cfg.training.early_stopping_patience,
+        early_stopping_threshold=cfg.training.early_stopping_threshold,
+    )
+    logger.info(
+        f"早停已启用：patience={cfg.training.early_stopping_patience} 次评估 "
+        f"({cfg.training.early_stopping_patience * cfg.training.eval_steps} 步)，"
+        f"threshold={cfg.training.early_stopping_threshold}"
+    )
+
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         data_collator=data_collator,
+        callbacks=[early_stopping_cb],
     )
 
     _gpu_memory_summary("Trainer 初始化后、训练前")

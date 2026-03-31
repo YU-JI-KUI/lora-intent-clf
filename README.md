@@ -68,9 +68,67 @@
 
 | 项目 | 规格 |
 |------|------|
-| GPU | 4 × NVIDIA V100 (16GB) |
-| 总显存 | 64GB |
+| GPU | 6~8 × NVIDIA V100 (16GB) |
+| 总显存 | 96~128GB |
 | 精度 | FP16（V100 不支持 BF16） |
+
+## machine.env 可调参数一览
+
+所有训练参数均通过 `machine.env` 统一管理，修改后无需改动任何脚本或 YAML 文件。
+
+**机器相关**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `MODEL_PATH` | — | 基座模型路径，**必须设置** |
+| `NPROC_PER_NODE` | 8 | GPU 数量，**必须设置** |
+| `OUTPUT_DIR` | `<ROOT>/saves/...` | LoRA adapter 保存目录 |
+| `DATASET_DIR` | `<ROOT>/data` | 数据集目录（含 dataset_info.json）|
+| `DEEPSPEED_CONFIG` | `ds_z3_offload_config.json` | DeepSpeed 配置文件路径 |
+| `EXPORT_DIR` | `<ROOT>/models/...` | 合并模型导出目录 |
+
+**LoRA 结构超参**
+
+| 参数 | 默认值 | 说明 | 调参建议 |
+|------|--------|------|---------|
+| `LORA_RANK` | 8 | 低秩矩阵的秩，决定可训练参数量 | 简单分类用 8，复杂任务用 16/32 |
+| `LORA_ALPHA` | 16 | 缩放系数（实际比例 = alpha/rank）| 保持 2×rank |
+| `LORA_DROPOUT` | 0.1 | LoRA 层 dropout | 数据少时适当增大到 0.1~0.2 |
+| `LORA_TARGET` | all | 插入 LoRA 的模块范围 | `all`（全线性层）效果最好 |
+
+**训练超参**
+
+| 参数 | 默认值 | 说明 | 调参建议 |
+|------|--------|------|---------|
+| `CUTOFF_LEN` | 256 | 最大序列长度（token 数）| 意图识别短文本 256 足够，长文本改 512 |
+| `PER_DEVICE_TRAIN_BATCH_SIZE` | 2 | 每张 GPU 的训练 batch size | V100 16GB 不超过 4 |
+| `GRADIENT_ACCUMULATION_STEPS` | 4 | 梯度累积步数 | 有效批次 = N卡×BS×此值，保持≥32 |
+| `LEARNING_RATE` | 2e-4 | 初始学习率 | LoRA 常用范围 1e-4 ~ 3e-4 |
+| `NUM_TRAIN_EPOCHS` | 10 | 最大训练轮数（配合早停） | 早停开启时设大值，训练自动决定 |
+| `WARMUP_RATIO` | 0.05 | 预热步数占比 | 简单分类 0.03~0.05 即可 |
+| `WEIGHT_DECAY` | 0.01 | L2 正则化系数 | 通常不需要修改 |
+| `MAX_GRAD_NORM` | 1.0 | 梯度裁剪最大范数 | 通常不需要修改 |
+
+**监控 & 早停**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `LOGGING_STEPS` | 20 | 日志打印间隔（训练步数）|
+| `EVAL_STEPS` | 200 | 评估间隔（训练步数）⚠️ 与 `SAVE_STEPS` 保持一致 |
+| `SAVE_STEPS` | 200 | Checkpoint 保存间隔 ⚠️ 必须等于 `EVAL_STEPS` |
+| `EARLY_STOPPING_PATIENCE` | 5 | 连续多少次评估无改善后停止训练 |
+| `EARLY_STOPPING_THRESHOLD` | 1e-4 | eval_loss 需下降超过此值才算"有改善" |
+
+## 早停（Early Stopping）
+
+早停监控 `eval_loss`，连续 `EARLY_STOPPING_PATIENCE` 次评估无改善则自动停止训练，并加载 eval_loss 最低的 checkpoint 作为最终模型。同时适用于 LlamaFactory CLI 路径和 Python 路径。
+
+**时机估算（50K训练数据、8卡、bs=2、grad_accum=4）**：
+- steps/epoch ≈ 50000 / (8×2×4) = 781 步
+- 每 epoch 评估约 4 次（每 200 步一次）
+- patience=5 ≈ 连续 1000 步（约 1.3 轮）无改善后停止
+
+**注意**：`SAVE_STEPS` 必须等于 `EVAL_STEPS`，否则 `load_best_model_at_end=True` 无法找到对应 checkpoint 会报错。
 
 ## DeepSpeed ZeRO-3 说明
 

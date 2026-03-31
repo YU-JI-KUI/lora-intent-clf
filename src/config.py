@@ -96,43 +96,75 @@ def load_project_config() -> "ProjectConfig":
     env = _load_machine_env()
     project_root = Path(__file__).parent.parent
 
-    # ── 从 machine.env 读取，未设置时用 PROJECT_ROOT 派生默认值 ──────────────
-    model_path = env.get(
-        "MODEL_PATH",
-        "/workspace/Qwen3-8B",
-    )
-    output_dir = env.get(
-        "OUTPUT_DIR",
-        str(project_root / "saves" / "qwen3-8b" / "lora" / "sft"),
-    )
-    dataset_dir = env.get(
-        "DATASET_DIR",
-        str(project_root / "data"),
-    )
-    deepspeed = env.get(
+    def _e(key: str, default: str) -> str:
+        """读取 env，未设置时返回 default"""
+        return env.get(key, default)
+
+    # ── [路径] 从 machine.env 读取，未设置时用 PROJECT_ROOT 派生默认值 ────────
+    model_path  = _e("MODEL_PATH",  "/workspace/Qwen3-8B")
+    output_dir  = _e("OUTPUT_DIR",  str(project_root / "saves" / "qwen3-8b" / "lora" / "sft"))
+    dataset_dir = _e("DATASET_DIR", str(project_root / "data"))
+    deepspeed   = _e(
         "DEEPSPEED_CONFIG",
-        # 默认使用 CPU offload 版本，确保在显存紧张的 V100 16GB 环境下可用。
-        # 若目标机器显存充足（A100 40GB+），可在 machine.env 中改为
-        # ds_z3_config.json（无 offload，速度更快）。
+        # 默认 CPU offload 版本，兼容 V100 16GB；A100 40GB+ 可改为 ds_z3_config.json
         str(project_root / "configs" / "deepspeed" / "ds_z3_offload_config.json"),
     )
-    export_dir = env.get(
-        "EXPORT_DIR",
-        str(project_root / "models" / "qwen3-8b-intent-clf"),
-    )
+    export_dir  = _e("EXPORT_DIR",  str(project_root / "models" / "qwen3-8b-intent-clf"))
+
+    # ── [LoRA] 超参 ────────────────────────────────────────────────────────────
+    lora_rank    = int(_e("LORA_RANK",    "8"))
+    lora_alpha   = int(_e("LORA_ALPHA",   "16"))
+    lora_dropout = float(_e("LORA_DROPOUT", "0.1"))
+    lora_target  = _e("LORA_TARGET", "all")
+
+    # ── [训练] 超参 ────────────────────────────────────────────────────────────
+    cutoff_len              = int(_e("CUTOFF_LEN",               "256"))
+    per_device_train_bs     = int(_e("PER_DEVICE_TRAIN_BATCH_SIZE", "2"))
+    gradient_accum_steps    = int(_e("GRADIENT_ACCUMULATION_STEPS", "4"))
+    learning_rate           = float(_e("LEARNING_RATE",          "2e-4"))
+    num_train_epochs        = float(_e("NUM_TRAIN_EPOCHS",        "10"))
+    warmup_ratio            = float(_e("WARMUP_RATIO",            "0.05"))
+    weight_decay            = float(_e("WEIGHT_DECAY",            "0.01"))
+    max_grad_norm           = float(_e("MAX_GRAD_NORM",           "1.0"))
+
+    # ── [监控 & 早停] ──────────────────────────────────────────────────────────
+    logging_steps               = int(_e("LOGGING_STEPS",           "20"))
+    eval_steps                  = int(_e("EVAL_STEPS",              "200"))
+    save_steps                  = int(_e("SAVE_STEPS",              str(eval_steps)))
+    early_stopping_patience     = int(_e("EARLY_STOPPING_PATIENCE", "5"))
+    early_stopping_threshold    = float(_e("EARLY_STOPPING_THRESHOLD", "1e-4"))
 
     return ProjectConfig(
         model=ModelConfig(
             model_name_or_path=model_path,
         ),
+        lora=LoraConfig(
+            lora_rank=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            lora_target=lora_target,
+        ),
         data=DataConfig(
             train_file=str(Path(dataset_dir) / "train.json"),
             val_file=str(Path(dataset_dir) / "val.json"),
             test_file=str(Path(dataset_dir) / "test.json"),
+            max_seq_length=cutoff_len,
         ),
         training=TrainingConfig(
             output_dir=output_dir,
             deepspeed=deepspeed,
+            per_device_train_batch_size=per_device_train_bs,
+            gradient_accumulation_steps=gradient_accum_steps,
+            learning_rate=learning_rate,
+            num_train_epochs=num_train_epochs,
+            warmup_ratio=warmup_ratio,
+            weight_decay=weight_decay,
+            max_grad_norm=max_grad_norm,
+            logging_steps=logging_steps,
+            eval_steps=eval_steps,
+            save_steps=save_steps,
+            early_stopping_patience=early_stopping_patience,
+            early_stopping_threshold=early_stopping_threshold,
         ),
         export=ExportConfig(
             export_dir=export_dir,
@@ -160,22 +192,24 @@ class ModelConfig:
 
 @dataclass
 class LoraConfig:
-    """LoRA 相关配置"""
+    """LoRA 相关配置（所有字段均可通过 machine.env 覆盖）"""
 
     # 对应 YAML: finetuning_type
     finetuning_type: str = "lora"
 
-    # 对应 YAML: lora_target
+    # 对应 YAML: lora_target / machine.env: LORA_TARGET
     lora_target: str = "all"
 
-    # 对应 YAML: lora_rank
-    lora_rank: int = 16
+    # 对应 YAML: lora_rank / machine.env: LORA_RANK
+    # 二分类简单任务推荐 8；复杂任务可用 16/32
+    lora_rank: int = 8
 
-    # 对应 YAML: lora_alpha（通常为 rank 的 1~2 倍）
-    lora_alpha: int = 32
+    # 对应 YAML: lora_alpha / machine.env: LORA_ALPHA
+    # 通常为 lora_rank 的 2 倍（缩放比 = alpha/rank）
+    lora_alpha: int = 16
 
-    # 对应 YAML: lora_dropout
-    lora_dropout: float = 0.05
+    # 对应 YAML: lora_dropout / machine.env: LORA_DROPOUT
+    lora_dropout: float = 0.1
 
     target_modules: Optional[List[str]] = None
 
@@ -190,8 +224,9 @@ class DataConfig:
     val_file: str = "/workspace/lora-intent-clf/data/val.json"
     test_file: str = "/workspace/lora-intent-clf/data/test.json"
 
-    # 对应 YAML: cutoff_len
-    max_seq_length: int = 512
+    # 对应 YAML: cutoff_len / machine.env: CUTOFF_LEN
+    # 意图识别文本通常 < 100 tokens，256 足够且节省显存
+    max_seq_length: int = 256
 
     # 对应 YAML: preprocessing_num_workers
     preprocessing_num_workers: int = 16
@@ -214,36 +249,50 @@ class DataConfig:
 
 @dataclass
 class TrainingConfig:
-    """训练超参数配置"""
+    """训练超参数配置（所有字段均可通过 machine.env 覆盖）"""
 
-    # 对应 YAML: output_dir
-    # 由 machine.env 的 OUTPUT_DIR 覆盖（通过 load_project_config()）
+    # 对应 YAML: output_dir / machine.env: OUTPUT_DIR
     output_dir: str = "/workspace/lora-intent-clf/saves/qwen3-8b/lora/sft"
 
-    num_train_epochs: float = 5.0
+    # machine.env: NUM_TRAIN_EPOCHS — 配合早停可以设大一些，由模型表现决定何时停止
+    num_train_epochs: float = 10.0
+    # machine.env: PER_DEVICE_TRAIN_BATCH_SIZE
     per_device_train_batch_size: int = 2
     per_device_eval_batch_size: int = 4
+    # machine.env: GRADIENT_ACCUMULATION_STEPS
     gradient_accumulation_steps: int = 4
-    learning_rate: float = 1e-4
+    # machine.env: LEARNING_RATE
+    learning_rate: float = 2e-4
     lr_scheduler_type: str = "cosine"
-    warmup_ratio: float = 0.1
+    # machine.env: WARMUP_RATIO
+    warmup_ratio: float = 0.05
+    # machine.env: WEIGHT_DECAY
     weight_decay: float = 0.01
+    # machine.env: MAX_GRAD_NORM
     max_grad_norm: float = 1.0
     fp16: bool = True
     optim: str = "adamw_torch"
     seed: int = 42
-    logging_steps: int = 10
-    save_steps: int = 500
+    # machine.env: LOGGING_STEPS
+    logging_steps: int = 20
+    # machine.env: SAVE_STEPS — 必须等于 eval_steps，早停依赖每次评估后的 checkpoint
+    save_steps: int = 200
     save_total_limit: int = 3
     eval_strategy: str = "steps"
-    eval_steps: int = 500
+    # machine.env: EVAL_STEPS
+    eval_steps: int = 200
     gradient_checkpointing: bool = True
     report_to: str = "tensorboard"
 
-    # 对应 YAML: deepspeed
-    # 由 machine.env 的 DEEPSPEED_CONFIG 覆盖（通过 load_project_config()）
+    # 对应 YAML: deepspeed / machine.env: DEEPSPEED_CONFIG
     # 默认 offload 版本：兼容 V100 16GB；A100 40GB+ 可改为 ds_z3_config.json
     deepspeed: Optional[str] = "/workspace/lora-intent-clf/configs/deepspeed/ds_z3_offload_config.json"
+
+    # ── 早停配置 / machine.env: EARLY_STOPPING_PATIENCE / EARLY_STOPPING_THRESHOLD
+    # 监控 eval_loss，连续 patience 次评估无改善则停止训练，并自动恢复最优 checkpoint
+    # patience=5 × eval_steps=200 ≈ 1000步 ≈ 1.3轮（以50K数据/8卡为基准）无改善时停止
+    early_stopping_patience: int = 5
+    early_stopping_threshold: float = 1e-4
 
 
 @dataclass

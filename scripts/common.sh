@@ -61,7 +61,7 @@ if [[ ${#_missing[@]} -gt 0 ]]; then
     exit 1
 fi
 
-# ─── 4. 可选参数默认值（从 PROJECT_ROOT 派生）────────────────────────────────
+# ─── 4. 路径参数默认值（从 PROJECT_ROOT 派生）────────────────────────────────
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/saves/qwen3-8b/lora/sft}"
 DATASET_DIR="${DATASET_DIR:-${PROJECT_ROOT}/data}"
 DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-${PROJECT_ROOT}/configs/deepspeed/ds_z3_offload_config.json}"
@@ -69,6 +69,30 @@ EXPORT_DIR="${EXPORT_DIR:-${PROJECT_ROOT}/models/qwen3-8b-intent-clf}"
 
 # 预测输出目录：与 OUTPUT_DIR 同级的 predict/ 子目录
 PREDICT_OUTPUT_DIR="$(dirname "${OUTPUT_DIR}")/predict"
+
+# ─── 4b. LoRA 超参数默认值 ────────────────────────────────────────────────────
+LORA_RANK="${LORA_RANK:-8}"
+LORA_ALPHA="${LORA_ALPHA:-16}"
+LORA_DROPOUT="${LORA_DROPOUT:-0.1}"
+LORA_TARGET="${LORA_TARGET:-all}"
+
+# ─── 4c. 训练超参数默认值 ─────────────────────────────────────────────────────
+CUTOFF_LEN="${CUTOFF_LEN:-256}"
+PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-2}"
+GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-4}"
+LEARNING_RATE="${LEARNING_RATE:-2e-4}"
+NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-10}"
+WARMUP_RATIO="${WARMUP_RATIO:-0.05}"
+WEIGHT_DECAY="${WEIGHT_DECAY:-0.01}"
+MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
+
+# ─── 4d. 监控 & 早停默认值 ───────────────────────────────────────────────────
+# ⚠️ SAVE_STEPS 必须等于 EVAL_STEPS，早停依赖每次评估后的 checkpoint
+LOGGING_STEPS="${LOGGING_STEPS:-20}"
+EVAL_STEPS="${EVAL_STEPS:-200}"
+SAVE_STEPS="${SAVE_STEPS:-${EVAL_STEPS}}"  # 默认与 EVAL_STEPS 保持一致
+EARLY_STOPPING_PATIENCE="${EARLY_STOPPING_PATIENCE:-5}"
+EARLY_STOPPING_THRESHOLD="${EARLY_STOPPING_THRESHOLD:-1e-4}"
 
 # ─── 5. 虚拟环境中的 Python / torchrun ───────────────────────────────────────
 _VENV="${PROJECT_ROOT}/.venv"
@@ -83,25 +107,50 @@ fi
 
 # ─── 6. 统一导出 ──────────────────────────────────────────────────────────────
 export PROJECT_ROOT MODEL_PATH OUTPUT_DIR DATASET_DIR DEEPSPEED_CONFIG \
-       EXPORT_DIR PREDICT_OUTPUT_DIR NPROC_PER_NODE PYTHON TORCHRUN
+       EXPORT_DIR PREDICT_OUTPUT_DIR NPROC_PER_NODE PYTHON TORCHRUN \
+       LORA_RANK LORA_ALPHA LORA_DROPOUT LORA_TARGET \
+       CUTOFF_LEN PER_DEVICE_TRAIN_BATCH_SIZE GRADIENT_ACCUMULATION_STEPS \
+       LEARNING_RATE NUM_TRAIN_EPOCHS WARMUP_RATIO WEIGHT_DECAY MAX_GRAD_NORM \
+       LOGGING_STEPS EVAL_STEPS SAVE_STEPS \
+       EARLY_STOPPING_PATIENCE EARLY_STOPPING_THRESHOLD
 
 # ─── 7. 启动时打印所有已解析参数（方便排查配置是否生效）────────────────────
 _CYAN='\033[0;36m'; _GREEN='\033[0;32m'; _YELLOW='\033[1;33m'; _NC='\033[0m'
-echo -e "${_CYAN}══════════════════════════════════════════════════════${_NC}"
-echo -e "${_CYAN}  [CONFIG] 已加载的机器配置（来源: ${_ENV_FILE:-${_ENV_EXAMPLE}}）${_NC}"
-echo -e "${_CYAN}══════════════════════════════════════════════════════${_NC}"
-echo -e "  ${_GREEN}PROJECT_ROOT      ${_NC}= ${PROJECT_ROOT}"
-echo -e "  ${_GREEN}MODEL_PATH        ${_NC}= ${MODEL_PATH}"
-echo -e "  ${_GREEN}OUTPUT_DIR        ${_NC}= ${OUTPUT_DIR}"
-echo -e "  ${_GREEN}DATASET_DIR       ${_NC}= ${DATASET_DIR}"
-echo -e "  ${_GREEN}DEEPSPEED_CONFIG  ${_NC}= ${DEEPSPEED_CONFIG}"
-echo -e "  ${_GREEN}EXPORT_DIR        ${_NC}= ${EXPORT_DIR}"
-echo -e "  ${_GREEN}PREDICT_OUTPUT_DIR${_NC}= ${PREDICT_OUTPUT_DIR}"
-echo -e "  ${_GREEN}NPROC_PER_NODE    ${_NC}= ${NPROC_PER_NODE}"
-echo -e "  ${_GREEN}PYTHON            ${_NC}= ${PYTHON}"
-echo -e "  ${_GREEN}TORCHRUN          ${_NC}= ${TORCHRUN}"
+echo -e "${_CYAN}══════════════════════════════════════════════════════════════${_NC}"
+echo -e "${_CYAN}  [CONFIG] 已加载的配置（来源: ${_ENV_FILE:-${_ENV_EXAMPLE}}）${_NC}"
+echo -e "${_CYAN}══════════════════════════════════════════════════════════════${_NC}"
+echo -e "  ${_GREEN}--- 机器 ---${_NC}"
+echo -e "  ${_GREEN}PROJECT_ROOT               ${_NC}= ${PROJECT_ROOT}"
+echo -e "  ${_GREEN}MODEL_PATH                 ${_NC}= ${MODEL_PATH}"
+echo -e "  ${_GREEN}NPROC_PER_NODE             ${_NC}= ${NPROC_PER_NODE}"
+echo -e "  ${_GREEN}DEEPSPEED_CONFIG           ${_NC}= ${DEEPSPEED_CONFIG}"
+echo -e "  ${_GREEN}OUTPUT_DIR                 ${_NC}= ${OUTPUT_DIR}"
+echo -e "  ${_GREEN}DATASET_DIR                ${_NC}= ${DATASET_DIR}"
+echo -e "  ${_GREEN}EXPORT_DIR                 ${_NC}= ${EXPORT_DIR}"
+echo -e "  ${_GREEN}PYTHON                     ${_NC}= ${PYTHON}"
+echo -e "  ${_GREEN}TORCHRUN                   ${_NC}= ${TORCHRUN}"
+echo -e "  ${_GREEN}--- LoRA 超参 ---${_NC}"
+echo -e "  ${_GREEN}LORA_RANK                  ${_NC}= ${LORA_RANK}"
+echo -e "  ${_GREEN}LORA_ALPHA                 ${_NC}= ${LORA_ALPHA}"
+echo -e "  ${_GREEN}LORA_DROPOUT               ${_NC}= ${LORA_DROPOUT}"
+echo -e "  ${_GREEN}LORA_TARGET                ${_NC}= ${LORA_TARGET}"
+echo -e "  ${_GREEN}--- 训练超参 ---${_NC}"
+echo -e "  ${_GREEN}CUTOFF_LEN                 ${_NC}= ${CUTOFF_LEN}"
+echo -e "  ${_GREEN}PER_DEVICE_TRAIN_BATCH_SIZE${_NC}= ${PER_DEVICE_TRAIN_BATCH_SIZE}"
+echo -e "  ${_GREEN}GRADIENT_ACCUMULATION_STEPS${_NC}= ${GRADIENT_ACCUMULATION_STEPS}"
+echo -e "  ${_GREEN}LEARNING_RATE              ${_NC}= ${LEARNING_RATE}"
+echo -e "  ${_GREEN}NUM_TRAIN_EPOCHS           ${_NC}= ${NUM_TRAIN_EPOCHS}"
+echo -e "  ${_GREEN}WARMUP_RATIO               ${_NC}= ${WARMUP_RATIO}"
+echo -e "  ${_GREEN}WEIGHT_DECAY               ${_NC}= ${WEIGHT_DECAY}"
+echo -e "  ${_GREEN}MAX_GRAD_NORM              ${_NC}= ${MAX_GRAD_NORM}"
+echo -e "  ${_GREEN}--- 监控 & 早停 ---${_NC}"
+echo -e "  ${_GREEN}LOGGING_STEPS              ${_NC}= ${LOGGING_STEPS}"
+echo -e "  ${_GREEN}EVAL_STEPS                 ${_NC}= ${EVAL_STEPS}"
+echo -e "  ${_GREEN}SAVE_STEPS                 ${_NC}= ${SAVE_STEPS}"
+echo -e "  ${_GREEN}EARLY_STOPPING_PATIENCE    ${_NC}= ${EARLY_STOPPING_PATIENCE}"
+echo -e "  ${_GREEN}EARLY_STOPPING_THRESHOLD   ${_NC}= ${EARLY_STOPPING_THRESHOLD}"
 
-# 校验关键文件是否存在
+# 校验关键文件/路径是否存在
 _warn_missing() {
     [[ -e "$2" ]] || echo -e "  ${_YELLOW}[WARN] ${1} 路径不存在: $2${_NC}"
 }
@@ -109,4 +158,4 @@ _warn_missing "MODEL_PATH"       "${MODEL_PATH}"
 _warn_missing "DEEPSPEED_CONFIG" "${DEEPSPEED_CONFIG}"
 _warn_missing "DATASET_DIR"      "${DATASET_DIR}"
 
-echo -e "${_CYAN}══════════════════════════════════════════════════════${_NC}"
+echo -e "${_CYAN}══════════════════════════════════════════════════════════════${_NC}"

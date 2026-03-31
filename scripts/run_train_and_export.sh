@@ -79,11 +79,28 @@ if [[ "${SKIP_TRAIN}" == "false" ]]; then
     info "Step 1/2: 开始 LoRA SFT 微调 | 配置: ${TRAIN_CONFIG}"
 
     # 机器特定参数通过 CLI 覆盖 YAML 中的静态值（CLI 优先级 > YAML）
+    # 所有可调参数均从 machine.env 读取，无需修改 YAML 或本脚本
     FORCE_TORCHRUN=1 llamafactory-cli train "${TRAIN_CONFIG}" \
-        --model_name_or_path  "${MODEL_PATH}" \
-        --output_dir          "${OUTPUT_DIR}" \
-        --dataset_dir         "${DATASET_DIR}" \
-        --deepspeed           "${DEEPSPEED_CONFIG}"
+        --model_name_or_path              "${MODEL_PATH}" \
+        --output_dir                      "${OUTPUT_DIR}" \
+        --dataset_dir                     "${DATASET_DIR}" \
+        --deepspeed                       "${DEEPSPEED_CONFIG}" \
+        --lora_rank                       "${LORA_RANK}" \
+        --lora_alpha                      "${LORA_ALPHA}" \
+        --lora_dropout                    "${LORA_DROPOUT}" \
+        --lora_target                     "${LORA_TARGET}" \
+        --cutoff_len                      "${CUTOFF_LEN}" \
+        --per_device_train_batch_size     "${PER_DEVICE_TRAIN_BATCH_SIZE}" \
+        --gradient_accumulation_steps     "${GRADIENT_ACCUMULATION_STEPS}" \
+        --learning_rate                   "${LEARNING_RATE}" \
+        --num_train_epochs                "${NUM_TRAIN_EPOCHS}" \
+        --warmup_ratio                    "${WARMUP_RATIO}" \
+        --weight_decay                    "${WEIGHT_DECAY}" \
+        --max_grad_norm                   "${MAX_GRAD_NORM}" \
+        --logging_steps                   "${LOGGING_STEPS}" \
+        --eval_steps                      "${EVAL_STEPS}" \
+        --save_steps                      "${SAVE_STEPS}" \
+        --early_stopping_patience         "${EARLY_STOPPING_PATIENCE}"
 
     info "训练完成！"
 else
